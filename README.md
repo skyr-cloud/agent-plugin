@@ -12,9 +12,10 @@ standard.
 ## Layout
 
 ```
-.claude-plugin/plugin.json   # Claude Code manifest
-.codex-plugin/plugin.json    # Codex manifest (identical content)
-skills/                      # one subdirectory per skill (SKILL.md)
+.claude-plugin/plugin.json        # Claude Code plugin manifest
+.claude-plugin/marketplace.json   # Claude Code marketplace catalog (self-cataloging)
+.codex-plugin/plugin.json         # Codex manifest (same content as the Claude Code one)
+skills/                           # one subdirectory per skill (SKILL.md)
 ```
 
 No skills ship yet — the plugin currently provides structure only.
@@ -23,11 +24,12 @@ No skills ship yet — the plugin currently provides structure only.
 
 ### Claude Code
 
-Add the marketplace, then install the `skyr` plugin:
+This repository is its own plugin marketplace (named `skyr-cloud`). Add it,
+then install the `skyr` plugin from it:
 
 ```sh
 claude plugin marketplace add skyr-cloud/agent-plugin
-claude plugin install skyr
+claude plugin install skyr@skyr-cloud
 ```
 
 ### Codex

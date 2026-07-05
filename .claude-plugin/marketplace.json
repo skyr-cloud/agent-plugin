@@ -1,0 +1,16 @@
+{
+  "name": "skyr-cloud",
+  "owner": {
+    "name": "Skyr developers"
+  },
+  "description": "Agent plugins for Skyr, the Git-native infrastructure orchestrator.",
+  "plugins": [
+    {
+      "name": "skyr",
+      "source": "./",
+      "description": "Agent skills for working with Skyr, the Git-native infrastructure orchestrator, and its configuration language (SCL).",
+      "license": "MIT",
+      "homepage": "https://skyr.cloud"
+    }
+  ]
+}
