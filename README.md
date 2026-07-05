@@ -18,7 +18,11 @@ standard.
 skills/                           # one subdirectory per skill (SKILL.md)
 ```
 
-No skills ship yet — the plugin currently provides structure only.
+## Skills
+
+| Skill | Teaches |
+|-------|---------|
+| [`scl`](skills/scl/SKILL.md) | Writing SCL/SCLE (syntax, types, modules, `Package.scle`, the resource model), looking up stdlib documentation, and verifying with `skyr fmt`/`skyr check`. |
 
 ## Install
 

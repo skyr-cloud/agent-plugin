@@ -8,8 +8,10 @@ skills/
     SKILL.md
 ```
 
-No skills ship yet — this directory is intentionally empty of skills and holds
-only this placeholder so the structure is present. Each future skill is a
-subdirectory containing a `SKILL.md` following the
+Each skill is a subdirectory containing a `SKILL.md` following the
 [Agent Skills](https://code.claude.com/docs/en/skills) format, which both
 Claude Code and Codex load.
+
+| Skill | Teaches |
+|-------|---------|
+| [`scl`](scl/SKILL.md) | Writing SCL/SCLE (syntax, types, modules, `Package.scle`, the resource model), looking up stdlib documentation, and verifying with `skyr fmt`/`skyr check`. |
