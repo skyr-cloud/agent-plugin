@@ -1,0 +1,6 @@
+{
+  "name": "skyr",
+  "description": "Agent skills for working with Skyr, the Git-native infrastructure orchestrator, and its configuration language (SCL).",
+  "version": "0.1.0",
+  "homepage": "https://skyr.cloud"
+}
