@@ -33,7 +33,10 @@ Two file kinds share the language:
   inputs of resource B is what creates the dependency edge A → B. There is no
   explicit `depends_on`.
 - **Types are structural.** Records match by shape, not name. Inference is
-  strong; annotate only when the compiler asks or for documentation.
+  strong; annotate only when the compiler asks or for documentation. It never
+  guesses: an `if`/`try`/list/dict whose parts share no common type, or a
+  generic type parameter used two incompatible ways, is a direct error at the
+  construct or call site — not a silent widening to `Any`.
 - **Two stdlib namespaces**: `Std/*` is the pure standard library built into
   the compiler (strings, lists, dicts, time, hashing, encoding, …). `Skyr/*`
   modules are served by resource plugins installed on the Skyr instance you
@@ -64,6 +67,10 @@ let lookup = #{ "key": "value" }           // #{ Str: Str } — dict, computed k
 - Type syntax: `Int`, `Float`, `Str`, `Bool`, `Path`, `Any`, `T?`, `[T]`,
   `#{ K: V }`, `{ f: T }`, `fn(A, B) R`, `fn<T>(T) T`,
   `fn<T <: { name: Str }>(T) Str`.
+- **Collection element types** are inferred across *all* entries,
+  order-independently: `[1, nil]` is `[Int?]`, `#{1: "x", 2: nil}` is
+  `#{Int: Str?}`. Elements with no common type are an error — ascribe
+  `as [Any]` (or `as #{ Any: Any }`) to force a heterogeneous literal.
 
 Strings interpolate expressions with `{...}` — no `$`:
 
@@ -112,9 +119,9 @@ let pairs = [for (x in xs) for (y in ys) x + y]
 
 // Exceptions
 let ParseError = exception(Str)             // payload optional: `exception` alone
-let risky = fn(s: Str) if (s != "") s else raise ParseError("empty")
-// note: keep the raise in the ELSE branch — the else is checked against the
-// then-branch's type, so `if (c) raise E else s` rejects s as unassignable
+// raise may sit in either branch — an if types as what covers both branches,
+// and raise produces no value, so guard clauses work in either position
+let risky = fn(s: Str) if (s == "") raise ParseError("empty") else s
 let safe = try risky(input)
     catch ParseError(msg): "fallback: {msg}"
 ```
