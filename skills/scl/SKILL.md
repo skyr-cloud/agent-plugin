@@ -124,6 +124,8 @@ let ParseError = exception(Str)             // payload optional: `exception` alo
 let risky = fn(s: Str) if (s == "") raise ParseError("empty") else s
 let safe = try risky(input)
     catch ParseError(msg): "fallback: {msg}"
+// catch targets may be dotted paths to module-owned exceptions:
+//   try Option.unwrap(x) catch Option.UnexpectedNil: fallback
 ```
 
 Operator notes: `+` concatenates strings; `Int`+`Float` arithmetic yields
