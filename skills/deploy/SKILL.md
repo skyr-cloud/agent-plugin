@@ -37,6 +37,14 @@ deploys to a different Skyr instance, substitute that instance's host.
 - Deleting a ref tears the environment down:
   `git push skyr --delete feature-x` destroys everything that environment
   owns, in dependency order.
+- Deleting a whole **repository, organization, or account** goes further than a
+  ref: `skyr repo delete`, `skyr org delete <org>`, and
+  `skyr auth delete-account` tear down every environment involved, then
+  **permanently** erase the entity's data — one-way, no undo, gated behind
+  typing the entity's exact name to confirm. The entity stays visible with a
+  `deleting` status until the purge finishes; while `deleting` it accepts reads
+  but no pushes or other changes. Deleted user and org names are retired for
+  good; a deleted repository's name frees up for reuse.
 - Every resource has a **region** (a metro label like `"stockholm"`), part of
   its identity, defaulting to the repository's region. Region-placeable
   resources take a `region: Str?` input; changing it is destroy + create.
@@ -346,6 +354,7 @@ grepping:
 curl -s https://skyr.foo/llms.txt                    # index of all doc pages
 curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, ownership in depth
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
+curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/scl/stdlib.md         # every Std/* and Skyr/* signature
 curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n -A 40 '^### Container.Pod'
 ```
