@@ -96,6 +96,47 @@ user?.name ?? "anonymous"       // optional chaining; result is Str
 There is no null-pointer error path: the type system forces you through
 `?.`, `??`, or `Std/Option` (`Option.unwrap` raises `Option.UnexpectedNil`).
 
+## Atoms and enums
+
+An **atom** `.name` is a first-class symbolic value (bare-identifier label,
+camelCase by convention). An **enum type** `enum { .a, .b }` is a fixed set of
+them — the way to type "one of N choices" so a wrong option is a compile error,
+not a runtime failure. `enum` is a keyword; the variants are a set (order-free,
+no duplicates, no empty `enum {}`).
+
+```scl
+type Mode enum { .dev, .staging, .prod }
+let mode: Mode = .prod              // .prod alone has type enum { .prod }
+```
+
+- **Structural**, like every SCL type: an enum *is* its label set; a `type`
+  alias adds no nominal identity.
+- **Subtyping is subset inclusion** — the dual of record width: `enum { .a }`
+  is assignable to `enum { .a, .b }` (fewer → more). A lone atom therefore
+  fits anywhere its variant is listed.
+- **Join is union**: `if (c) .a else .b` is `enum { .a, .b }`; same across list
+  elements, dict values, record fields. Joining an enum with a non-enum is an
+  error (no widening), like `Int` vs `Str`.
+- **Equality** is `==`/`!=` by name (ordering ops are numeric-only). Assigning
+  a non-member atom to an enum-typed slot is a hard error; a comparison that can
+  never hold — a disjoint variant, or an atom vs a string (`.prod` is not
+  `"prod"`) — is flagged at compile time as always-`false`.
+- **Narrowing** fires against a *literal* atom: `if (m == .prod)` refines `m`
+  to `enum { .prod }` in the `then`, and *subtracts* the variant in the `else`,
+  so an `if`/`else if` chain gets progressively tighter (exhausting the set
+  leaves `Never`). For `m: Mode?`, a positive match also drops the `nil`.
+  Comparing two enum *variables* checks but narrows nothing.
+- **String boundary**: interpolation and `Encoding.toJson` drop the dot
+  (`.prod` → `"prod"`); `fromJson` never yields an atom. Like `Path`, atom-ness
+  does not survive leaving the system.
+
+```scl
+// Optional enum field with a default; ?? joins the default's singleton back in.
+type Curve enum { .p256, .p384, .p521 }
+let keyCurve = fn(c: Curve?) c ?? .p256                    // Curve
+let planeLabel = fn(m: Mode) if (m == .prod) "live" else "preview"
+```
+
 ## Expressions
 
 Everything is an expression; there are no statements inside function bodies.
