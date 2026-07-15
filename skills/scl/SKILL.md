@@ -363,6 +363,25 @@ Rules that matter in practice:
 and their inputs/outputs are precise. Look them up before use, and let
 `skyr check` confirm.
 
+## Secrets
+
+Read a deployment's secrets with `Std/Secret`. A secret's plaintext never enters
+SCL — `Secret.get(name)` returns an opaque `Ref { name, createdAt, qid }` whose
+`qid` is a Secret Version QID string, and a name that isn't set raises the
+catchable `Secret.NotFound`:
+
+```scl
+import Std/Secret
+
+let db = Secret.get("db-password")   // raises Secret.NotFound if unset
+// db.qid — pass this to a consumer; it is never the plaintext
+```
+
+Hand the `qid` to something that resolves it at deploy time — the container
+plugin's per-container `secretEnv` (env var) or pod-level `secretFiles` (mounted
+file), which the `deploy` skill covers. The values themselves are set out of band
+with `skyr secrets set|list|delete`, never committed to git.
+
 ## Looking up documentation
 
 The Skyr docs are served as raw markdown, ideal for fetching and grepping.
@@ -385,7 +404,7 @@ curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n '^## \|^### '   # table o
 ```
 
 `stdlib.md` documents every `Std/*` module (`Str`, `List`, `Dict`, `Option`,
-`Num`, `Float`, `Time`, `Path`, `Encoding`, `Crypto`, `Dyn`, `Env`,
+`Num`, `Float`, `Time`, `Path`, `Encoding`, `Crypto`, `Dyn`, `Env`, `Secret`,
 `Package`) and every `Skyr/*` resource with input/output tables. For exact
 language semantics beyond the docs (typing rules, evaluation order), the
 formal SCL specification PDF ships alongside Skyr releases on dl.skyr.cloud.

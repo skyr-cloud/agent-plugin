@@ -357,10 +357,21 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `readOnly`/`subPath`/`permissions`/`userId`/`groupId`. Read-only mounts of
   seeded ephemeral content update in place when the content changes; every
   other mount change replaces the pod.
-- **Secrets** have no dedicated feature yet. Container `env` values and
-  seeded volume files are plain text in the repo's git history. Material
-  generated *by* resources (PKI keys, random values) never has to leave
-  Skyr, and containers can fetch external secrets themselves at runtime.
+- **Secrets.** Store sensitive values (passwords, tokens, TLS keys) with the
+  `skyr secrets` CLI, then consume them in SCL without any plaintext in git.
+  `skyr secrets set <name>` reads the value from piped stdin, a hidden prompt,
+  or `--from-file` — never an argument, so it stays out of shell history;
+  `skyr secrets list` shows metadata only (never values); `skyr secrets delete`
+  clears a value. Values are repository-scoped by default, with
+  `--environment [name]` for a per-environment override. In config, read them
+  via `Std/Secret`: `Secret.get(name).qid` is an opaque reference you pass to a
+  container's `secretEnv` (env var) or the pod's `secretFiles` (mounted file);
+  the plaintext is resolved inside the platform at pod materialization and never
+  enters git, the stored resource inputs, or any log. Because the pinned version
+  is part of the pod's identity, rotating a secret (`skyr secrets set` again)
+  recreates the pod to pick up the new value — rotation is a deploy, not a hot
+  reload. `skyr run` can't resolve secret plaintext locally, so it rejects a pod
+  that declares `secretEnv`/`secretFiles`; deploy the environment instead.
 - **`Artifact.File({ name, contents, mediaType })`** stores a file and
   returns a time-limited download `url` — useful for exposing generated
   config, reports, or deployment metadata.
@@ -420,6 +431,11 @@ user-visible consequence:
 | `InconsistentState` | Reality drifted from config and reconciliation can't close the gap. |
 | `Crash` | The thing is misbehaving with user-visible downtime. |
 
+An **uncaught SCL exception** during evaluation — reading a secret that isn't
+set, unwrapping a `nil`, any top-level `raise` your config doesn't `catch` —
+opens a `CannotProgress` incident carrying the exception's message, so a missing
+input surfaces on the deployment instead of silently stalling.
+
 Incidents are listed on the website at `/<org>/~i` (the CLI doesn't surface
 them). For diagnosis: `skyr deployments logs` shows evaluation and rollout
 errors (a `BadConfiguration` usually reproduces locally with `skyr check`);
@@ -436,6 +452,7 @@ curl -s https://skyr.foo/llms.txt                    # index of all doc pages
 curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, ownership in depth
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
+curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI, consumption, IAM
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/scl/stdlib.md         # every Std/* and Skyr/* signature
 curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n -A 40 '^### Container.Pod'
