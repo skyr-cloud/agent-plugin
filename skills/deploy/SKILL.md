@@ -364,14 +364,17 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `skyr secrets list` shows metadata only (never values); `skyr secrets delete`
   clears a value. Values are repository-scoped by default, with
   `--environment [name]` for a per-environment override. In config, read them
-  via `Std/Secret`: `Secret.get(name).qid` is an opaque reference you pass to a
-  container's `secretEnv` (env var) or the pod's `secretFiles` (mounted file);
-  the plaintext is resolved inside the platform at pod materialization and never
+  via `Std/Secret`: `Secret.get(name).qid` is an opaque reference. A pod's `env`
+  and its `files` are single maps whose values are `.literal("…")` (a plain
+  value) or `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`,
+  in a container/pod `env` var or a pod `files` entry (an absolute path). The
+  plaintext is resolved inside the platform at pod materialization and never
   enters git, the stored resource inputs, or any log. Because the pinned version
   is part of the pod's identity, rotating a secret (`skyr secrets set` again)
   recreates the pod to pick up the new value — rotation is a deploy, not a hot
   reload. `skyr run` can't resolve secret plaintext locally, so it rejects a pod
-  that declares `secretEnv`/`secretFiles`; deploy the environment instead.
+  with any `.secret(…)` value in `env`/`files` (a `.literal`-only pod runs);
+  deploy the environment instead.
 - **`Artifact.File({ name, contents, mediaType })`** stores a file and
   returns a time-limited download `url` — useful for exposing generated
   config, reports, or deployment metadata.
