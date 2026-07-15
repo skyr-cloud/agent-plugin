@@ -117,18 +117,21 @@ let mode: Mode = .prod              // .prod alone has type enum { .prod }
 - **Join is union**: `if (c) .a else .b` is `enum { .a, .b }`; same across list
   elements, dict values, record fields. Joining an enum with a non-enum is an
   error (no widening), like `Int` vs `Str`.
-- **Equality** is `==`/`!=` by name (ordering ops are numeric-only). Assigning
-  a non-member atom to an enum-typed slot is a hard error; a comparison that can
-  never hold — a disjoint variant, or an atom vs a string (`.prod` is not
-  `"prod"`) — is flagged at compile time as always-`false`.
+- **Equality** is `==`/`!=` by name — and, for tagged atoms, by payload too
+  (ordering ops are numeric-only). Assigning a non-member atom to an enum-typed
+  slot is a hard error; a comparison that can never hold — a disjoint variant,
+  or an atom vs a string (`.prod` is not `"prod"`) — is flagged at compile time
+  as always-`false`.
 - **Narrowing** fires against a *literal* atom: `if (m == .prod)` refines `m`
   to `enum { .prod }` in the `then`, and *subtracts* the variant in the `else`,
   so an `if`/`else if` chain gets progressively tighter (exhausting the set
   leaves `Never`). For `m: Mode?`, a positive match also drops the `nil`.
   Comparing two enum *variables* checks but narrows nothing.
-- **String boundary**: interpolation and `Encoding.toJson` drop the dot
-  (`.prod` → `"prod"`); `fromJson` never yields an atom. Like `Path`, atom-ness
-  does not survive leaving the system.
+- **String boundary**: a *bare* atom's interpolation and `Encoding.toJson` drop
+  the dot (`.prod` → `"prod"`); `fromJson` never yields an atom. Like `Path`,
+  atom-ness does not survive leaving the system. A *tagged* atom has no plain
+  form — interpolation renders it whole (`.ok(1)`) and JSON/YAML encoding
+  rejects it.
 
 ```scl
 // Optional enum field with a default; ?? joins the default's singleton back in.
@@ -136,6 +139,53 @@ type Curve enum { .p256, .p384, .p521 }
 let keyCurve = fn(c: Curve?) c ?? .p256                    // Curve
 let planeLabel = fn(m: Mode) if (m == .prod) "live" else "preview"
 ```
+
+### Tagged values and `switch`
+
+An atom may carry a positional **payload**, so enums are full tagged unions
+(sum types), including recursive ones. Write the payload types in the variant
+(`.name(T, …)`) and give the atom arguments to construct one:
+
+```scl
+type Status enum { .active(Int), .idle, .error(Str) }
+let running: Status = .active(8080)          // .active(1) synthesizes enum { .active(Int) }
+type List enum { .cons(Int, List), .empty }  // recursive; terminator is .empty (.nil is reserved)
+let nums: List = .cons(1, .cons(2, .empty))
+```
+
+- Empty parens `.name()` are rejected — a nullary variant is bare `.name`. A
+  nullary `.a` and a tagged `.a(Int)` are different-arity, incompatible variants.
+- **Payload subtyping** is width (on labels) plus slotwise **covariance**: a
+  shared variant keeps its arity and each slot widens, so `enum { .ok(enum { .x }) }`
+  flows into `enum { .ok(enum { .x, .y }), .err }`.
+
+Destructure with `switch` — the elimination form, and the only way to recover a
+payload. It is an **expression** (its type is the join of the arm bodies) and it
+is **total**: the `case`s must cover the subject's static type or the compiler
+errors. The catch-all is `case _:` (there is no `else`); zero cases is valid
+only on an uninhabited subject.
+
+```scl
+let describe = fn(s: Status)
+    switch s
+        case .active(port): "on {port}"     // binds the payload slot
+        case .idle: "idle"
+        case .error(msg): "error: {msg}"
+
+let head = fn(l: List)
+    switch l
+        case .cons(first, _): first          // _ ignores a slot; arity must match
+        case .empty: 0
+```
+
+Patterns (v1): variant `.name(<pat>, …)`, a variable binding, wildcard `_`, and
+`nil` (only on an optional subject — adds the none case to coverage). A variant
+pattern's arity must equal the payload's; ignore a slot with an explicit `_`.
+Patterns may nest and overlap — **first match wins**, top to bottom — and a fully
+shadowed arm is an unreachable-case error. A top-level binder types at the
+*residual* (the subject minus already-consumed variants). Literals, ranges,
+list/cons patterns, `@`-bindings, and `case … if` guards are **not yet
+supported**.
 
 ## Expressions
 
