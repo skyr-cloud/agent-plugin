@@ -125,19 +125,21 @@ let image = Container.Image({
 
 let pod = Container.Pod({
     name: "web",
-    containers: [{
+    containers: #{ "web": {
         image: image.url,
         cpu: 500,          // millicores; hard limit and reservation
         memory: 268435456, // bytes (256 MiB); hard limit and reservation
-    }],
+    } },
 })
 ```
 
 `Image` builds from a directory in the repo and pushes to the instance
 registry; `image.url` is digest-pinned. Public images (`"caddy:2"`) work
-directly as `image` values. `cpu` and `memory` are **required** on every
-container — both are hard limits. Containers in the same pod share a network
-namespace, so siblings reach each other on `localhost`.
+directly as `image` values. `containers` is a **name-keyed map**
+(`#{ "name": { ... } }`); the key names the container in logs and in the pod's
+`exitCodes` output. `cpu` and `memory` are **required** on every container —
+both are hard limits. Containers in the same pod share a network namespace, so
+siblings reach each other on `localhost`.
 
 ### Open ports — how ingress works
 
@@ -166,7 +168,7 @@ let ip = Container.InternetAddress({ name: "front-door" })
 
 let pod = Container.Pod({
     name: "web",
-    containers: [{ image: image.url, cpu: 500, memory: 268435456 }],
+    containers: #{ "web": { image: image.url, cpu: 500, memory: 268435456 } },
     internetAddress: ip,
 })
 ```
@@ -218,15 +220,15 @@ let caddyfile = Container.ephemeralVolume({
 let pod = Container.Pod({
     name: "web",
     internetAddress: ip,
-    containers: [
-        { image: image.url, cpu: 500, memory: 268435456 },
-        {
+    containers: #{
+        "app": { image: image.url, cpu: 500, memory: 268435456 },
+        "caddy": {
             image: "caddy:2",
             cpu: 250,
             memory: 134217728,
             mounts: #{ "/etc/caddy": { volume: caddyfile, readOnly: true } },
         },
-    ],
+    },
 })
 
 pod.Port({ port: 80, public: true })   // ACME HTTP-01 challenge + redirect
@@ -247,7 +249,7 @@ let net = Container.Network({ name: "app", cidr: "10.42.0.0/24" })
 
 let api = Container.Pod({
     name: "api",
-    containers: [{ image: image.url, cpu: 500, memory: 268435456 }],
+    containers: #{ "api": { image: image.url, cpu: 500, memory: 268435456 } },
     networks: #{ "app0": net },
 })
 
@@ -264,6 +266,85 @@ pods can also open non-`public` ports to accept internal-only traffic.
 Internal DNS records require the network to have a `name` and resolve as
 `<record>.<netname>.internal` (`"@"` for the network apex). Traffic on a
 Network never leaves the private plane and is not metered.
+
+## Restart, jobs, and scheduled runs
+
+There is **no Job or CronJob resource** — run-to-completion and scheduling are
+per-container policy on an ordinary `Container.Pod`. Each container takes four
+optional policy fields:
+
+- **`restart`** — `.always` (default: restart on any exit — crash recovery for
+  services and sidecars), `.onFailure` (restart only on a non-zero exit; a zero
+  exit is final — retry-until-success), or `.never` (any exit is final).
+  Restarts run in place with automatic exponential backoff. The default means
+  every pod gets crash recovery for free.
+- **`keepAlive`** — `Bool`, default `true`. The pod is **reaped** (node
+  resources freed) once every keep-alive container has terminated. At least one
+  container must keep the pod alive (else rejected at eval). A `keepAlive: false`
+  sidecar is stopped when the pod reaps.
+- **`maxRetries`** — `Int?`, valid only with `.onFailure`; absent means retry
+  forever, `N` permits `N + 1` executions before the last failing exit is final.
+- **`timeout`** — `Time.Duration?`, a per-attempt kill budget. Must be
+  millisecond-valued (a multiple of `Time.second`/`Time.day`/…); a
+  calendar-month duration is rejected.
+
+A **job** is just a pod whose container uses `.onFailure`/`.never`; job-ness is
+implied by configuration, never declared.
+
+```scl
+import Skyr/Container
+import Std/Time
+
+// A one-shot migration: retries until it exits 0, then the pod reaps.
+let migrate = Container.Pod({
+    name: "migrate",
+    containers: #{ "migrate": {
+        image: migrateImage.url,
+        cpu: 500,
+        memory: 268435456,
+        restart: .onFailure,
+        maxRetries: 5,
+        timeout: Time.multiply(Time.minute, 10),
+    } },
+})
+```
+
+**Completion** surfaces as the pod's `exitCodes: #{Str: Int}` output — each
+container's final exit code, keyed by name. A key is a **pending** value until
+that container's final termination, so you sequence and gate with plain control
+flow, keying the specific container (never folding the whole map — a `.always`
+container never resolves, collapsing a fold to pending forever):
+
+```scl
+// `serve` is created only once the migration exits cleanly; while the code is
+// pending the `if` condition is pending and `serve` is deferred.
+let serve = if (migrate.exitCodes["migrate"] == 0)
+    Container.Pod({ name: "serve", containers: #{ "web": { image: webImage.url, cpu: 1000, memory: 536870912 } } })
+```
+
+The gate lives in the `if` condition, not the pod's inputs, so `serve`'s
+identity stays stable. An `else` branch handles remediation on a final non-zero
+exit.
+
+**Cron** is a job pod whose *name* embeds a tick value from `Time.now` (or
+`Time.tick(interval, offset)` for an offset schedule like "04:00 UTC daily").
+Each new tick is a new resource identity, so the new-named pod is created and
+the previous destroyed:
+
+```scl
+let tick = Time.now(Time.hour)
+Container.Pod({
+    name: "hourly-{tick.epochMillis}",
+    containers: #{ "report": { image: reportImage.url, cpu: 500, memory: 268435456, restart: .onFailure } },
+})
+```
+
+Accepted limits: concurrency is **Replace only** (a tick boundary kills a still-
+running previous pod — keep `timeout` under the interval), **missed ticks are
+skipped** (no catch-up), a pod's recorded history **evaporates one window
+later**, and boundaries are **UTC only**. Completion is **at-least-once**, so
+**jobs must be idempotent** — a node death before completion is recorded re-runs
+the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 
 ## Other capabilities
 
@@ -353,6 +434,7 @@ grepping:
 ```sh
 curl -s https://skyr.foo/llms.txt                    # index of all doc pages
 curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, ownership in depth
+curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/scl/stdlib.md         # every Std/* and Skyr/* signature
