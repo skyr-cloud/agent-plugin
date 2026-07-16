@@ -361,9 +361,16 @@ Rules that matter in practice:
 
 **Do not guess plugin-module signatures.** Plugin modules (`Skyr/Container`,
 `Skyr/DNS`, `Skyr/IAM`, `Skyr/PKI`, `Skyr/HTTP`, `Skyr/Rollout`,
-`Skyr/Random`, `Skyr/Artifact`, `Skyr/AWS/*`, `HashiCorp/Random`, …) are
-served by the instance you deploy to, and their inputs/outputs are precise.
-Look them up before use, and let `skyr check` confirm.
+`Skyr/Random`, `Skyr/Artifact`, `Skyr/Resource`, `Skyr/AWS/*`,
+`HashiCorp/Random`, …) are served by the instance you deploy to, and their
+inputs/outputs are precise. Look them up before use, and let `skyr check`
+confirm.
+
+You can also define your *own* resource types: `Skyr/Resource.Definition<T>`
+declares a type whose instances (created via the constructor the definition
+returns, typically re-exported to consumer repos) register themselves with the
+defining deployment, which collects the live set and folds it into its own
+resources. Look up `Skyr/Resource` for the exact shape.
 
 ## Secrets
 
