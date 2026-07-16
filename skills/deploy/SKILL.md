@@ -236,8 +236,38 @@ pod.Port({ port: 443, public: true })
 ```
 
 (The domain must already resolve to the pod for ACME to succeed.) The zone's
-`CAARecord` can restrict which CAs may issue for the domain. For private or
-internal chains, `Skyr/PKI` generates keys and signs CSRs in-config.
+`CAARecord` can restrict which CAs may issue for the domain.
+
+Alternatively, obtain the certificate itself declaratively with
+`Skyr/PKI/ACME` and mount the PEM into whatever terminates TLS — no in-container
+ACME client. DNS-01 composes with `Skyr/DNS` and is the only method that issues
+wildcards:
+
+```scl
+import Skyr/PKI
+import Skyr/PKI/ACME
+
+let key = PKI.ECDSAPrivateKey({ name: "web-tls" })
+
+let account = ACME.Account({
+    name: "prod",
+    directoryUrl: "https://acme-v02.api.letsencrypt.org/directory",
+    contacts: ["mailto:ops@example.com"],
+    agreeToTermsOfService: true,
+})
+
+let cert = account.DNS01Certificate({
+    privateKeyPem: key.pem,
+    domains: ["example.com", "*.example.com"],
+    zone: zone,   // the DNS.Zone above — it satisfies the ChallengeZone façade
+})
+// cert.certificate is pending until issued (status `.issued`), so anything
+// mounting cert.certificate.pem is ordered after issuance. Skyr publishes the
+// challenge records, drives validation, and renews automatically with no gap.
+```
+
+For private or internal chains, `Skyr/PKI` generates keys and signs CSRs
+in-config.
 
 ### Private networking
 
@@ -384,6 +414,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`PKI.*`** — `ED25519PrivateKey`/`ECDSAPrivateKey`/`RSAPrivateKey`,
   `CertificationRequest`, `CertificateSignature`: build self-managed
   certificate chains (CAs, client certs, internal TLS) entirely in-config.
+- **`PKI/ACME.*`** — publicly-trusted TLS certificates over ACME (RFC 8555, the
+  Let's Encrypt protocol). An `Account` yields `DNS01Certificate` (composes with
+  `Skyr/DNS`, does wildcards) and `HTTP01Certificate` (you serve the token)
+  sub-constructors; Skyr drives order → challenge → issue → renew with no
+  imperative steps and renews with no gap.
 - **`Random.Int({ name, min, max })`** — a random value minted once and then
   stable across deploys.
 - **`IAM.Role`/`IAM.Policy`** — org-scoped authorization: a `Role` is an
