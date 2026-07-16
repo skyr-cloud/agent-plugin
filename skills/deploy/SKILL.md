@@ -428,6 +428,18 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`Rollout.Group({ name, members })`** — groups the resources created
   inside its `members` closure under one parent resource, giving them a
   shared handle in the resource tree.
+- **`Skyr/AWS/*`** — resources in *your own* AWS account (billed by AWS, not
+  Skyr), surfacing the Terraform AWS provider as one module per AWS service
+  (`Skyr/AWS/S3`, `Skyr/AWS/DynamoDB`, …); import only the services you use.
+  Each service module exports `provider(config)` — bind it once with `region`
+  plus `accessKey`/`secretKey` as `.literal(…)`/`.secret(qid)` values (same
+  secret machinery as pod `env`), then call constructors off the bound
+  provider: `s3.Bucket("skyr-name", { …inputs })`. The first positional
+  argument is the Skyr identity (renaming = destroy + create), and inputs the
+  provider deems non-updatable also replace on change, mirroring Terraform's
+  requires-replace. Field names come from the provider's own schema — trust
+  editor completions/hover over guessing. (`HashiCorp/Random` is the same
+  machinery wired only into the local dev harness.)
 
 Exact inputs/outputs for all of these live in the stdlib reference — look
 them up rather than guessing (see below).
