@@ -428,6 +428,17 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`Rollout.Group({ name, members })`** — groups the resources created
   inside its `members` closure under one parent resource, giving them a
   shared handle in the resource tree.
+- **`Resource.Definition<T>("Name")`** — define your *own* resource type
+  whose backend is SCL. One repo declares a typed definition and exports its
+  `.Resource` constructor; other repos in the org import the module and call
+  the constructor to register instances; the defining repo reads every live
+  instance back as `def.instances: [T]` and folds them into its own resources
+  (e.g. one repo collects ingress rules that many app repos declare). Instances
+  are content-addressed by payload and write-only (no return channel to the
+  caller in v1), and the collected set refreshes automatically — so a
+  definition is volatile and its deployment never settles into `Up`. A consumer
+  scopes to a definition through its `Package.scle` dependency pin; pin it to a
+  branch or tag, not a commit hash.
 - **`Skyr/AWS/*`** — resources in *your own* AWS account (billed by AWS, not
   Skyr), surfacing the Terraform AWS provider as one module per AWS service
   (`Skyr/AWS/S3`, `Skyr/AWS/DynamoDB`, …); import only the services you use.
