@@ -37,11 +37,13 @@ Two file kinds share the language:
   guesses: an `if`/`try`/list/dict whose parts share no common type, or a
   generic type parameter used two incompatible ways, is a direct error at the
   construct or call site — not a silent widening to `Any`.
-- **Two stdlib namespaces**: `Std/*` is the pure standard library built into
-  the compiler (strings, lists, dicts, time, hashing, encoding, …). `Skyr/*`
-  modules are served by resource plugins installed on the Skyr instance you
-  deploy to — their exact signatures are instance-defined, so look them up
-  (see "Looking up documentation" below) rather than guessing.
+- **Two kinds of modules**: `Std/*` is the pure standard library built into
+  the compiler (strings, lists, dicts, time, hashing, encoding, …). Platform
+  modules — everything else — are served by resource plugins installed on the
+  Skyr instance you deploy to; first-party modules live under `Skyr/*`, and
+  plugins may serve other namespaces too (e.g. `HashiCorp/Random`). Their
+  exact signatures are instance-defined, so look them up (see "Looking up
+  documentation" below) rather than guessing.
 
 ## Values and types
 
@@ -357,11 +359,11 @@ Rules that matter in practice:
 - Deployment identity (org / repo / environment names) is available at eval
   time via `Std/Env`: `Env.environment.name`, `Env.repository.name`, etc.
 
-**Do not guess `Skyr/*` signatures.** Plugin modules (`Skyr/Container`,
+**Do not guess plugin-module signatures.** Plugin modules (`Skyr/Container`,
 `Skyr/DNS`, `Skyr/IAM`, `Skyr/PKI`, `Skyr/HTTP`, `Skyr/Rollout`,
-`Skyr/Random`, `Skyr/Artifact`, …) are served by the instance you deploy to,
-and their inputs/outputs are precise. Look them up before use, and let
-`skyr check` confirm.
+`Skyr/Random`, `Skyr/Artifact`, `Skyr/AWS/*`, `HashiCorp/Random`, …) are
+served by the instance you deploy to, and their inputs/outputs are precise.
+Look them up before use, and let `skyr check` confirm.
 
 ## Secrets
 
@@ -406,7 +408,9 @@ curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n '^## \|^### '   # table o
 
 `stdlib.md` documents every `Std/*` module (`Str`, `List`, `Dict`, `Option`,
 `Num`, `Float`, `Time`, `Path`, `Encoding`, `Crypto`, `Dyn`, `Env`, `Secret`,
-`Package`) and every `Skyr/*` resource with input/output tables. For exact
+`Package`) and every platform resource module (`Skyr/*`, plus other
+plugin-served namespaces like `HashiCorp/Random`) with input/output
+tables. For exact
 language semantics beyond the docs (typing rules, evaluation order), the
 formal SCL specification PDF ships alongside Skyr releases on dl.skyr.cloud.
 
