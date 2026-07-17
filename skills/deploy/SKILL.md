@@ -68,10 +68,11 @@ an authenticated identity, and a git remote pointing at the instance.
   (region defaults to the org's; a `--deployment-role` defaults to the org's
   all-access `Super` role).
 - **Remote**: plain SSH at the instance host, authenticated by the
-  registered key, with your username as the SSH user:
+  registered key, with your username as the SSH user — an `ssh://` URL
+  that `skyr repo create` prints and the repository's web UI page shows:
 
   ```sh
-  git remote add skyr alice@skyr.foo:acme/shop
+  git remote add skyr ssh://alice@skyr.foo/acme/shop
   git push skyr main
   ```
 
