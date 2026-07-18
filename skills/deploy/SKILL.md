@@ -261,7 +261,7 @@ let account = ACME.Account({
 })
 
 let cert = account.DNS01Certificate({
-    privateKeyPem: key.pem,
+    privateKey: key.pem,   // the sealed key's Secret Version QID, never a PEM
     domains: ["example.com", "*.example.com"],
     zone: zone,   // the DNS.Zone above — it satisfies the ChallengeZone façade
 })
@@ -269,6 +269,13 @@ let cert = account.DNS01Certificate({
 // mounting cert.certificate.pem is ordered after issuance. Skyr publishes the
 // challenge records, drives validation, and renews automatically with no gap.
 ```
+
+Certificates/chains are public PEM outputs; the private key stays sealed in
+the secrets vault — deliver it to the terminating container as a pod `files`
+entry (`.secret(key.pem)`). Grants are explicit: the deployment role needs
+`secret:View`/`Write`/`Delete` on the key's and the ACME account's
+resource-scoped secrets (an `IAM.Policy` with wildcard objects like
+`"<org>/<repo>::*"` covers them — same stanza as the Secrets bullet below).
 
 For private or internal chains, `Skyr/PKI` generates keys and signs CSRs
 in-config.
