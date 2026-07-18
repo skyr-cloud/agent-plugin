@@ -376,13 +376,14 @@ resources. Look up `Skyr/Resource` for the exact shape.
 
 Read a deployment's secrets with `Std/Secret`. A secret's plaintext never enters
 SCL — `Secret.get(name)` returns an opaque `Ref { name, createdAt, qid }` whose
-`qid` is a Secret Version QID string, and a name that isn't set raises the
-catchable `Secret.NotFound`:
+`qid` is a Secret Version QID string, and a name that doesn't resolve (not set,
+or the deployment's role lacks `secret:View` on it) raises the catchable
+`Secret.NotFound`:
 
 ```scl
 import Std/Secret
 
-let db = Secret.get("db-password")   // raises Secret.NotFound if unset
+let db = Secret.get("db-password")   // raises Secret.NotFound if unresolved
 // db.qid — pass this to a consumer; it is never the plaintext
 ```
 
