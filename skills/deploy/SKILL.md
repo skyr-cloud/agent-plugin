@@ -403,7 +403,12 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   value) or `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`,
   in a container/pod `env` var or a pod `files` entry (an absolute path). The
   plaintext is resolved inside the platform at pod materialization and never
-  enters git, the stored resource inputs, or any log. Because the pinned version
+  enters git, the stored resource inputs, or any log. Consumption is
+  IAM-gated with no implicit grant: the repo's **deployment role** must hold
+  `secret:View` on each consumed secret, via an ordinary policy stanza —
+  `IAM.Policy({ name: "read-secrets", subjects: [deployer.qid], verbs:
+  ["secret:View"], objects: ["<org>/<repo>!*", "<org>/<repo>::*"] })` — or
+  `Secret.get` raises `Secret.NotFound` at eval. Because the pinned version
   is part of the pod's identity, rotating a secret (`skyr secrets set` again)
   recreates the pod to pick up the new value — rotation is a deploy, not a hot
   reload. `skyr run` can't resolve secret plaintext locally, so it rejects a pod
