@@ -421,6 +421,27 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   reload. `skyr run` can't resolve secret plaintext locally, so it rejects a pod
   with any `.secret(…)` value in `env`/`files` (a `.literal`-only pod runs);
   deploy the environment instead.
+- **Knobs.** `Skyr/Knob.{Text,Toggle,Integer,Choice}` are manually provided,
+  per-environment values a human turns out of band — a feature flag, a banner
+  string, a worker count, a deployment mode. Declare one like any resource
+  (`Knob.Integer({ name: "workers", default: 4 })`,
+  `Knob.Choice({ name: "mode", choices: [.blue, .green], default: .blue })`) and
+  read its `.value`, the effective value: the supplied value, else the declared
+  `default`, else **pending**. A knob *with* a `default` resolves immediately; a
+  knob *without* one holds `.value` pending, gating every dependent that reads it
+  (they show as not-yet-created, no incident) until someone supplies a value —
+  "awaiting input" is a first-class state, not a stuck rollout. Turn a knob with
+  `skyr knobs set <name> <value>` (plain argv — knobs are non-secret; env from
+  ambient context or `--environment`) or the web env **Knobs** tab (`~k`);
+  `skyr knobs list` shows effective values and provenance, and `skyr knobs unset`
+  clears non-destructively (converged dependents keep their last value). A set
+  flows into the deployment on the next reconcile pass, rolling dependents —
+  converge-plane, no hot reload. `Choice` offers a fixed set of concrete values
+  and a consumer switching over its `.value` narrows exhaustively over them; a
+  `Choice` selection is set by its rendered form (`skyr knobs set mode green`).
+  Give knobs a `default` if you deploy to ephemeral/PR environments, which start
+  unset. Turning a knob needs `resource:Update` on it; reading needs
+  `resource:View` (the ordinary resource verbs).
 - **`Artifact.File({ name, contents, mediaType })`** stores a file and
   returns a time-limited download `url` — useful for exposing generated
   config, reports, or deployment metadata.
@@ -530,6 +551,7 @@ curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, 
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
 curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI, consumption, IAM
+curl -s https://skyr.foo/~docs/knobs.md              # knobs: the four types, awaiting-input gating, skyr knobs CLI
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/scl/stdlib.md         # every Std/* and Skyr/* signature
 curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n -A 40 '^### Container.Pod'
