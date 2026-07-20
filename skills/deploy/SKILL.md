@@ -430,7 +430,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `default`, else **pending**. A knob *with* a `default` resolves immediately; a
   knob *without* one holds `.value` pending, gating every dependent that reads it
   (they show as not-yet-created, no incident) until someone supplies a value —
-  "awaiting input" is a first-class state, not a stuck rollout. Turn a knob with
+  "awaiting input" is a first-class state, not a stuck rollout, and the
+  deployment log names each open gate (`Waiting for user input: knob <name> —
+  <description>`, once per gate, re-announced if the knob is later cleared).
+  Turn a knob with
   `skyr knobs set <name> <value>` (plain argv — knobs are non-secret; env from
   ambient context or `--environment`) or the web env **Knobs** tab (`~k`);
   `skyr knobs list` shows effective values and provenance, and `skyr knobs unset`
