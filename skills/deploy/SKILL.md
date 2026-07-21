@@ -199,8 +199,8 @@ zone.CNAMERecord({ name: "www", target: "example.com" })
 - The zone's `nameservers` output lists four hostnames under the instance
   apex. Delegating the domain to them at the registrar is what makes Skyr
   authoritative — the delegation itself is the proof of ownership. The
-  volatile `status` output reports what public resolvers see: `"delegated"`,
-  `"partial"`, `"wrong"`, or `"pending"`.
+  volatile `status` output reports what public resolvers see as an enum
+  atom: `.delegated`, `.partial`, `.wrong`, or `.pending`.
 - Record names are relative to the apex: `"@"` for the apex, `"*"` for a
   wildcard. Available types: `ARecord`, `AAAARecord`, `CNAMERecord` (not at
   the apex), `ALIASRecord` (apex-safe server-side alias), `TXTRecord`,
