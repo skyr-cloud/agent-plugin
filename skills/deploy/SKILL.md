@@ -542,6 +542,17 @@ set, unwrapping a `nil`, any top-level `raise` your config doesn't `catch` —
 opens a `CannotProgress` incident carrying the exception's message, so a missing
 input surfaces on the deployment instead of silently stalling.
 
+Any evaluation that can't finish fails the pass the same way — same
+`CannotProgress` incident, same backoff — and applies **no** partial effects:
+nothing is created, updated, or destroyed from an evaluation that didn't
+complete. Beyond an uncaught exception, the other way to trip this is
+**exhausting the per-pass resource budget**: each evaluation runs under a
+generous ceiling on work, memory, and wall-clock time (ten seconds by default),
+so a runaway loop or an enormous value (`List.range` over billions, a string
+repeated to gigabytes) fails with an incident naming the limit hit. A budget
+failure is *not* an SCL exception — `try`/`catch` cannot intercept it; the fix
+is to bound the work each pass does.
+
 Incidents are listed on the website at `/<org>/~i` (the CLI doesn't surface
 them). For diagnosis: `skyr deployments logs` shows evaluation and rollout
 errors (a `BadConfiguration` usually reproduces locally with `skyr check`);
