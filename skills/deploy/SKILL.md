@@ -450,7 +450,12 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   config, reports, or deployment metadata.
 - **`HTTP.Get({ url, headers })`** performs a GET as a resource (volatile;
   re-performed on input changes) and outputs `status`, `body`, `headers` —
-  a probe or a way to pull external data into the config.
+  a probe or a way to pull external data into the config. Hosted deployments
+  fetch public destinations only: `http`/`https` URLs, with requests to
+  loopback/private/link-local addresses refused (including hostnames or
+  redirect hops resolving to them); requests time out after 30s and the
+  response is capped at 4 MiB. `skyr run` applies no address restrictions,
+  so probing `localhost` locally keeps working.
 - **`PKI.*`** — `ED25519PrivateKey`/`ECDSAPrivateKey`/`RSAPrivateKey`,
   `CertificationRequest`, `CertificateSignature`: build self-managed
   certificate chains (CAs, client certs, internal TLS) entirely in-config.
