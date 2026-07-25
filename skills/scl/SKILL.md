@@ -449,7 +449,8 @@ skyr repl                   # interactive: evaluate expressions, inspect types
   import won't resolve and the machine is offline with a cold cache, that's
   why — it is not necessarily a typo.
 - Cross-repo imports resolve through the instance too, and need the
-  dependency repos to exist there.
+  dependency repos to exist there *and* be declared in `Package.scle`. An
+  undeclared repo is a `module not found` error, not a typo.
 
 Fix diagnostics in source order — SCL errors carry causal chains for nested
 type mismatches, and an early resolution failure often cascades.
