@@ -475,8 +475,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   shared handle in the resource tree.
 - **`Resource.Definition<T>("Name")`** — define your *own* resource type
   whose backend is SCL. One repo declares a typed definition and exports its
-  `.Resource` constructor; other repos in the org import the module and call
-  the constructor to register instances; the defining repo reads every live
+  `.Resource` constructor; other repos in the **same org** import the module
+  and call the constructor to register instances (cross-org imports compile in
+  general, but a cross-org instance registration is rejected at transition
+  time); the defining repo reads every live
   instance back as `def.instances: [T]` and folds them into its own resources
   (e.g. one repo collects ingress rules that many app repos declare). Instances
   are content-addressed by payload and write-only (no return channel to the

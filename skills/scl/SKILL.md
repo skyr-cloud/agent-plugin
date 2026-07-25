@@ -278,9 +278,9 @@ both is an ambiguous-module error.
 
 ## Package.scle and cross-repo imports
 
-To import modules from another repository in the same organisation, declare
-the dependency in `Package.scle` at the repo root — itself an SCLE file whose
-value is a `Std/Package.Manifest`:
+To import modules from another repository, declare the dependency in
+`Package.scle` at the repo root — itself an SCLE file whose value is a
+`Std/Package.Manifest`:
 
 ```scl
 import Std/Package
@@ -316,6 +316,19 @@ let bucket = Database.makeBucket({ ... })   // remote module: resource is YOURS
 The manifest is the only way in: importing a repo that `dependencies` does not
 name is a `module not found` compile error, even if that repo is deployed and
 running. Add the entry first.
+
+A dependency may be in **any** org. Declaring it only asks — the importing
+repo's deployment role must hold `repository:View` on the dependency's
+`org/repo`, checked live on every pass before any of its source is read. Within
+your own org the default `Super` deployment role already covers it; across orgs
+the *dependency's* org grants it, by naming the importer's deployment-role QID
+in an `IAM.Policy` of its own (policies are always evaluated in the object's
+org, so no org can grant itself access to another's repos). Missing the grant
+fails the deployment with an incident naming the repo and the verb.
+
+One exception to "any org": `Skyr/Resource` custom-resource instances must be
+registered against a definition in the *same* org — a cross-org consumer
+compiles but its instance transitions are rejected.
 
 Ownership rule: a resource belongs to the deployment whose own code path
 reaches the resource call. Reading a foreign repo's top-level resource output
