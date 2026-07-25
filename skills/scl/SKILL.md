@@ -313,6 +313,10 @@ let url = Database.primaryUrl               // remote state: read their outputs
 let bucket = Database.makeBucket({ ... })   // remote module: resource is YOURS
 ```
 
+The manifest is the only way in: importing a repo that `dependencies` does not
+name is a `module not found` compile error, even if that repo is deployed and
+running. Add the entry first.
+
 Ownership rule: a resource belongs to the deployment whose own code path
 reaches the resource call. Reading a foreign repo's top-level resource output
 is remote state; calling a function it exports creates a resource owned by
