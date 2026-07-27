@@ -422,6 +422,8 @@ curl -s https://skyr.foo/~docs/scl/stdlib.md             # full stdlib + plugin 
 curl -s https://skyr.foo/~docs/scl/syntax.md             # complete syntax reference
 curl -s https://skyr.foo/~docs/scl/types.md              # type system in depth
 curl -s https://skyr.foo/~docs/cross-repo-imports.md     # Package.scle details
+curl -s https://skyr.foo/~docs/resources.md              # what declaring a resource means at deploy time
+curl -s https://skyr.foo/~docs/iam.md                    # roles and policies: Skyr/IAM, in words and examples
 ```
 
 Typical lookup — find a module or resource's exact fields:
@@ -435,7 +437,9 @@ curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n '^## \|^### '   # table o
 `Num`, `Float`, `Time`, `Path`, `Encoding`, `Crypto`, `Dyn`, `Env`, `Secret`,
 `Package`) and every platform resource module (`Skyr/*`, plus other
 plugin-served namespaces like `HashiCorp/Random`) with input/output
-tables. For exact
+tables. `Skyr/IAM` is the exception: its model and worked examples are in
+`~docs/iam.md` above, and its field reference is on the rendered page
+`https://skyr.foo/~docs/scl/reference/Skyr/IAM/`. For exact
 language semantics beyond the docs (typing rules, evaluation order), the
 formal SCL specification PDF ships alongside Skyr releases on dl.skyr.cloud.
 

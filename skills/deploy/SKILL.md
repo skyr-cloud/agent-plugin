@@ -530,7 +530,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`IAM.Role`/`IAM.Policy`** — org-scoped authorization: a `Role` is an
   empty subject; a `Policy` grants `subjects` (role QIDs) `verbs` over
   `objects`, all `*`-pattern matchers, default-deny. A repo's deployments
-  act as its deployment role (default `Super`).
+  act as its deployment role (default `Super`). Full model — matcher
+  semantics, object shapes, what each verb gates:
+  `curl -s https://skyr.foo/~docs/iam.md`.
 - **`Rollout.Group({ name, members })`** — groups the resources created
   inside its `members` closure under one parent resource, giving them a
   shared handle in the resource tree.
@@ -630,12 +632,27 @@ grepping:
 ```sh
 curl -s https://skyr.foo/llms.txt                    # index of all doc pages
 curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, ownership in depth
+curl -s https://skyr.foo/~docs/resources.md          # what every resource does: transitions, drift, reads
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
 curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI, consumption, IAM
 curl -s https://skyr.foo/~docs/knobs.md              # knobs: the four types, awaiting-input gating, skyr knobs CLI
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/cross-repo-imports.md # depending on another repo, and sharing resources with one
+curl -s https://skyr.foo/~docs/iam.md                # permissions: roles, policies, matchers, verbs
 curl -s https://skyr.foo/~docs/scl/stdlib.md         # every Std/* and Skyr/* signature
 curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n -A 40 '^### Container.Pod'
 ```
+
+Permissions are documented next to the operation that needs them: wherever a
+page describes something IAM gates, it carries a `> *IAM*:` line naming the
+verb and what it allows. Grepping the raw markdown for that marker answers
+"what must I be allowed to do here":
+
+```sh
+curl -s https://skyr.foo/~docs/secrets.md | grep '> \*IAM\*:'
+```
+
+Every verb the documentation describes is also collected, with a link back to
+the page describing it, in the searchable index at
+`https://skyr.foo/~docs/iam/verbs/` (a rendered page, not raw markdown).
