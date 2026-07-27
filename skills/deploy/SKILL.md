@@ -320,7 +320,8 @@ is not metered.
 An internal DNS name belongs to whoever publishes it **first**: a name another
 environment already holds on the same network is not overwritten — the deploy
 fails, naming the holder — and only the holder can change or remove its own
-record (which it can always do). Attaching needs
+record. *Removing* it always works, even after the holder's grant is
+withdrawn; *changing* it goes through the grant. Attaching needs
 `resource:AttachPodToNetwork` on the network; publishing needs the separate
 `resource:AttachDnsRecordToNetwork`.
 
@@ -355,7 +356,8 @@ The four use verbs are `resource:AttachPodToNetwork`,
 environment's resources are checked too; it's invisible only because a repo's
 deployment role defaults to the org's `Super` role, which short-circuits within
 that org. A restricted role needs the grants for its own resources as well. A
-refusal names the verb, the object QID, and the acting role.
+refusal names the verb and the object QID, plus the acting role when the
+deployment presented one.
 
 Revocation is **lazy**: it bites on the holder's next transition, never
 detaching a running pod. There is no owner-initiated eviction, so a resource
