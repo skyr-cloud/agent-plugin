@@ -3,10 +3,11 @@ name: deploy
 description: >-
     How deployment to Skyr works: pushing to the skyr git remote, environments
     and the deployment lifecycle, exposing pods to the internet (ports,
-    InternetAddress, DNS zones), private networking, first-party plugin
-    capabilities, and checking rollout status and incidents. Use when deploying
-    to Skyr, wiring a repository to a Skyr instance, exposing a service
-    publicly, or debugging a rollout.
+    InternetAddress, DNS zones), private networking, sharing networks, volumes
+    and addresses across repositories, first-party plugin capabilities, and
+    checking rollout status and incidents. Use when deploying to Skyr, wiring a
+    repository to a Skyr instance, exposing a service publicly, or debugging a
+    rollout.
 ---
 
 # Deploying to Skyr
@@ -178,9 +179,15 @@ let pod = Container.Pod({
 ```
 
 `ip.address` is a public IPv4 that survives pod replacement and redeploys.
-An address binds to **exactly one pod** — binding it twice is an eval-time
-error. The pod's firewall still applies: only `public: true` ports accept
-internet traffic on the address.
+An address routes to **exactly one pod at a time, anywhere in Skyr** — two
+pods in one program naming it is an eval-time error, and a pod elsewhere
+trying to take an address another pod already holds fails the deploy, naming
+the holder. (Replacing a bound pod is fine: the successor in the same
+environment takes the claim over.) The claim is released when the bound pod
+stops naming the address or is deleted. Binding needs
+`resource:BindInternetAddress` on the address, and the pod must be in the
+address's region. The pod's firewall still applies: only `public: true` ports
+accept internet traffic on the address.
 
 ### A custom domain
 
@@ -305,8 +312,57 @@ net.dns.ARecord({
 inner IPv4 per attachment in `networkAddresses`, keyed the same way. Attached
 pods can also open non-`public` ports to accept internal-only traffic.
 Internal DNS records require the network to have a `name` and resolve as
-`<record>.<netname>.internal` (`"@"` for the network apex). Traffic on a
-Network never leaves the private plane and is not metered.
+`<record>.<netname>.internal` (`"@"` for the network apex). A pod may not
+attach two networks that share a `name` — the lookup would be ambiguous, so
+it's rejected at eval. Traffic on a Network never leaves the private plane and
+is not metered.
+
+An internal DNS name belongs to whoever publishes it **first**: a name another
+environment already holds on the same network is not overwritten — the deploy
+fails, naming the holder — and only the holder can change or remove its own
+record (which it can always do). Attaching needs
+`resource:AttachPodToNetwork` on the network; publishing needs the separate
+`resource:AttachDnsRecordToNetwork`.
+
+## Sharing networks, volumes, and addresses across repos
+
+Networks, persistent volumes, and internet addresses are shareable across
+repositories: the owner exports the handle its constructor returned, the
+consumer imports it via a `Package.scle` dependency (the `scl` skill covers
+imports). The identity strings on those handles are opaque and carry their
+owner — guessing one is not a route in, and a hand-assembled handle is refused
+where a pod attaches, mounts, or binds it.
+
+Using a shared resource needs the read chain (`repository:View` +
+`environment:View` + `resource:View`) **plus** the use verb, whose object is
+the used resource's full QID. One policy in the *owner's* config covers it:
+
+```scl
+IAM.Policy({
+    name: "app-uses-platform",
+    subjects: ["acme/app::*:Skyr/IAM.Role:app-deployer"],
+    verbs: ["repository:View", "environment:View", "resource:View",
+            "resource:AttachPodToNetwork", "resource:MountVolume"],
+    objects: ["acme/platform", "acme/platform::main",
+              "acme/platform::*:Skyr/Container.Network:*",
+              "acme/platform::*:Skyr/Container.PersistentVolume:uploads"],
+})
+```
+
+The four use verbs are `resource:AttachPodToNetwork`,
+`resource:AttachDnsRecordToNetwork`, `resource:MountVolume`, and
+`resource:BindInternetAddress`. Enforcement is **uniform** — your own
+environment's resources are checked too; it's invisible only because a repo's
+deployment role defaults to the org's `Super` role, which short-circuits within
+that org. A restricted role needs the grants for its own resources as well. A
+refusal names the verb, the object QID, and the acting role.
+
+Revocation is **lazy**: it bites on the holder's next transition, never
+detaching a running pod. There is no owner-initiated eviction, so a resource
+you share can be held by its current user until they release it — for a shared
+`InternetAddress` the owner's only forced remedy is delete + recreate, which
+changes the public IP. Dropping an attachment/mount/binding always succeeds,
+even after the grant is gone.
 
 ## Restart, jobs, and scheduled runs
 
@@ -397,7 +453,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   dict keyed by absolute path: `#{ "/data": { volume: v } }`, with optional
   `readOnly`/`subPath`/`permissions`/`userId`/`groupId`. Read-only mounts of
   seeded ephemeral content update in place when the content changes; every
-  other mount change replaces the pod.
+  other mount change replaces the pod. A persistent volume's identity includes
+  its owning environment, so another repository's volume of the same name is a
+  different volume with its own data; mounting one needs `resource:MountVolume`
+  on it (see the sharing section above).
 - **Secrets.** Store sensitive values (passwords, tokens, TLS keys) with the
   `skyr secrets` CLI, then consume them in SCL without any plaintext in git.
   `skyr secrets set <name>` reads the value from piped stdin, a hidden prompt,
@@ -574,6 +633,7 @@ curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifi
 curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI, consumption, IAM
 curl -s https://skyr.foo/~docs/knobs.md              # knobs: the four types, awaiting-input gating, skyr knobs CLI
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
+curl -s https://skyr.foo/~docs/cross-repo-imports.md # depending on another repo, and sharing resources with one
 curl -s https://skyr.foo/~docs/scl/stdlib.md         # every Std/* and Skyr/* signature
 curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n -A 40 '^### Container.Pod'
 ```
