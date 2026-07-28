@@ -594,8 +594,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   editor completions/hover over guessing. (`HashiCorp/Random` is the same
   machinery wired only into the local dev harness.)
 
-Exact inputs/outputs for all of these live in the stdlib reference — look
-them up rather than guessing (see below).
+Exact inputs/outputs for the first-party modules live in the generated module
+reference — look them up rather than guessing (see below).
 
 ## Watching a rollout
 
@@ -707,8 +707,25 @@ curl -s https://skyr.foo/~docs/knobs.md              # knobs: the four types, aw
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/cross-repo-imports.md # depending on another repo, and sharing resources with one
 curl -s https://skyr.foo/~docs/iam.md                # permissions: roles, policies, matchers, verbs
-curl -s https://skyr.foo/~docs/scl/stdlib.md         # every Std/* and Skyr/* signature
-curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n -A 40 '^### Container.Pod'
+curl -s https://skyr.foo/~docs/terraform.md          # Skyr/AWS and the other provider-backed modules
+curl -s https://skyr.foo/~docs/scl/reference.md      # every documented module, one line each
+```
+
+Module signatures are two curls away: the reference index above lists every
+`Std/*` and first-party `Skyr/*` module with a summary, and each module's own
+markdown carries one `### <ExportName>` section per export — unqualified names,
+types first, then functions and values — each with its signature, docs, and a
+bullet per field:
+
+```sh
+# the whole module
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md
+
+# every export it has, in page order
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n '^### '
+
+# one export in full — signature, docs, fields
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n -A 40 '^### Pod$'
 ```
 
 Permissions are documented next to the operation that needs them: wherever a
@@ -718,6 +735,7 @@ verb and what it allows. Grepping the raw markdown for that marker answers
 
 ```sh
 curl -s https://skyr.foo/~docs/secrets.md | grep '> \*IAM\*:'
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep '> \*IAM\*:'
 ```
 
 Every verb the documentation describes is also collected, with a link back to

@@ -244,6 +244,10 @@ import acme/platform/Database         // cross-repo (needs Package.scle, below)
 - `export let` / `export type` make bindings importable. Type and value
   namespaces are separate — a module can export both `type Config` and
   `let Config`.
+- **Doc comments are markdown**: `///` documents the item that follows it, and
+  a leading `//!` block at the top of a file documents the module itself.
+  Editor tooling shows them on hover, and the module reference served by the
+  instance is generated from them.
 
 ```scl
 type Port Int
@@ -418,30 +422,46 @@ use that instance's host instead):
 
 ```sh
 curl -s https://skyr.foo/llms.txt                        # index of all doc pages
-curl -s https://skyr.foo/~docs/scl/stdlib.md             # full stdlib + plugin resource reference
+curl -s https://skyr.foo/~docs/scl/reference.md          # every documented module, one line each
 curl -s https://skyr.foo/~docs/scl/syntax.md             # complete syntax reference
 curl -s https://skyr.foo/~docs/scl/types.md              # type system in depth
 curl -s https://skyr.foo/~docs/cross-repo-imports.md     # Package.scle details
 curl -s https://skyr.foo/~docs/resources.md              # what declaring a resource means at deploy time
 curl -s https://skyr.foo/~docs/iam.md                    # roles and policies: Skyr/IAM, in words and examples
+curl -s https://skyr.foo/~docs/terraform.md              # Skyr/AWS and the other provider-backed modules
 ```
 
-Typical lookup — find a module or resource's exact fields:
+A module's documentation is generated from its source and reached in two
+curls. The reference index above groups every documented module by namespace —
+`Std/*` and every first-party `Skyr/*` module — one line each with a summary,
+each linking to that module's own markdown.
+
+A module's markdown is shaped for grepping: the module's narrative sits between
+the `# <Namespace>/<Module>` title and the first `##` section, then one
+`### <ExportName>` section per export — types first, then functions and values
+— each carrying its signature, its documentation, and a bullet per field or
+parameter.
 
 ```sh
-curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n -A 40 '^### Container.Pod'
-curl -s https://skyr.foo/~docs/scl/stdlib.md | grep -n '^## \|^### '   # table of contents
+# the whole module
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md
+
+# every export it has, in page order
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n '^### '
+
+# one export in full — signature, docs, fields
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n -A 40 '^### Pod$'
 ```
 
-`stdlib.md` documents every `Std/*` module (`Str`, `List`, `Dict`, `Option`,
-`Num`, `Float`, `Time`, `Path`, `Encoding`, `Crypto`, `Dyn`, `Env`, `Secret`,
-`Package`) and every platform resource module (`Skyr/*`, plus other
-plugin-served namespaces like `HashiCorp/Random`) with input/output
-tables. `Skyr/IAM` is the exception: its model and worked examples are in
-`~docs/iam.md` above, and its field reference is on the rendered page
-`https://skyr.foo/~docs/scl/reference/Skyr/IAM/`. For exact
-language semantics beyond the docs (typing rules, evaluation order), the
-formal SCL specification PDF ships alongside Skyr releases on dl.skyr.cloud.
+Export names in the headings are unqualified — `### Pod`, not
+`### Container.Pod` — and a name that is both a type and a constructor gets a
+section apiece. Modules generated from a Terraform provider's live schema
+(`Skyr/AWS/*`, `HashiCorp/Random`) are not in the index — `~docs/terraform.md`
+covers how they work, and their field names come from the provider's own
+schema, so trust editor completions over guessing.
+
+For exact language semantics beyond the docs (typing rules, evaluation order),
+the formal SCL specification PDF ships alongside Skyr releases on dl.skyr.cloud.
 
 ## Verifying your work
 
