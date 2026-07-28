@@ -572,7 +572,8 @@ skyr deployments list             # states of this repo's deployments
 skyr deployments logs --follow    # stream deployment progress in real time
 skyr resources list               # resources in the current env
 skyr resources list --env staging
-skyr resources logs <resource-qid>
+skyr resources logs Skyr/Container.Pod:web
+skyr resources logs -f stockholm:Skyr/Container.Pod:web
 ```
 
 A rollout is done when the deployment reports converged — state `Up`, or
@@ -580,12 +581,46 @@ A rollout is done when the deployment reports converged — state `Up`, or
 lifecycle section). `skyr resources list` shows per-resource state; JSON
 output (`--format json`) is the reliable way to script against either.
 
+**Naming a resource.** Every command that takes one accepts any tail of the
+resource QID `org/repo::env::region:Type:name`, completing the rest from
+`--org`/`--repo`/`--env` (or the git checkout):
+
+| Argument | Completed |
+|---|---|
+| `acme/shop::main::stockholm:Skyr/Container.Pod:web` | nothing |
+| `main::stockholm:Skyr/Container.Pod:web` | org/repo |
+| `stockholm:Skyr/Container.Pod:web` | org/repo, env |
+| `Skyr/Container.Pod:web` | org/repo, env, region |
+
+The `org/repo::env` head drops from the left only; the region is independent and
+may be dropped from *any* of these (it then defaults to the repository's region,
+which is not necessarily the org's home region). Types are always
+plugin-qualified — `Skyr/Container.Pod`, never `Container.Pod`. Because every
+wire parameter comes from the identifier rather than from flags, a fully-spelled
+QID reaches another repo/env/region with no flags at all.
+
+`skyr resources list` prints the reverse: its ID column is the shortest tail
+that names each row **from the invocation that printed it, flags included** — so
+rows listed under `--env staging` must be pasted back with `--env staging` (or
+with the environment spelled into the identifier). The region is always shown.
+`--format json` carries the full `qid` instead, which is what to script against.
+
 To reach a not-publicly-exposed port from the local machine, forward it over
-SSH (find the port resource's QID via `skyr resources list`):
+SSH. A forward only ever targets a `Skyr/Container.Pod.Port`, so the type may be
+left out and the port's own name (as `skyr resources list` prints it)
+identifies it:
 
 ```sh
+skyr port-forward web-1a2b3c:8080/tcp 8080
 skyr port-forward acme/shop::main::stockholm:Skyr/Container.Pod.Port:web-1a2b3c:8080/tcp 8080
 ```
+
+Anything else — a `Skyr/Container.Pod`, say — is refused before the tunnel is
+dialled: a declared port is what opens the pod's firewall, so it is the only
+thing a forward can land on. The edge to tunnel through is the git server of the
+checkout you run from; override with `--scs-address host:port`, and outside a
+checkout an explicitly set `--api-url`/`SKYR_API_URL` names the instance (port
+22), falling back to `skyr.cloud:22`.
 
 ## When a rollout goes wrong
 
@@ -621,8 +656,8 @@ is to bound the work each pass does.
 Incidents are listed on the website at `/<org>/~i` (the CLI doesn't surface
 them). For diagnosis: `skyr deployments logs` shows evaluation and rollout
 errors (a `BadConfiguration` usually reproduces locally with `skyr check`);
-`skyr resources logs <qid>` shows a specific resource, including container
-output from pods.
+`skyr resources logs Skyr/Container.Pod:web` shows a specific resource,
+including container output from pods.
 
 ## Looking up documentation
 
