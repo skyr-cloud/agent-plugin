@@ -536,6 +536,23 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`Rollout.Group({ name, members })`** — groups the resources created
   inside its `members` closure under one parent resource, giving them a
   shared handle in the resource tree.
+- **`Rollout.Version({ name, major, minor?, patch? })`** — a
+  `major.minor.patch` number that advances itself. Wire anything hashable
+  into a tier (a string, a record, a path — `major: ./src` means "bump the
+  major number whenever anything under `src` changes") and that tier's
+  counter goes up by one on the first deployment where its content differs
+  from the deployment before. Creates at `0.0.0`; the *most significant*
+  changed tier wins, advancing by one and zeroing every lesser tier;
+  starting to track a tier or dropping one counts as a change of it; a
+  deployment that changes nothing never bumps. Outputs are exactly
+  `{ major: Int, minor: Int, patch: Int }`; render them with
+  `Rollout.formatVersion(version)`. `name` is the whole identity, so
+  renaming replaces the resource and the replacement restarts at `0.0.0` —
+  there is no way to set or roll back a number. Use it for image tags,
+  release labels, or anything that should move when content moves. Under
+  `skyr run` (and `skyr check`/the REPL) paths carry no content identifier,
+  so a path-backed tier never advances locally — that only happens on a
+  real deployment.
 - **`Resource.Definition<T>("Name")`** — define your *own* resource type
   whose backend is SCL. One repo declares a typed definition and exports its
   `.Resource` constructor; other repos in the **same org** import the module
