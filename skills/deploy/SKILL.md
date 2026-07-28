@@ -606,13 +606,13 @@ with the environment spelled into the identifier). The region is always shown.
 `--format json` carries the full `qid` instead, which is what to script against.
 
 To reach a not-publicly-exposed port from the local machine, forward it over
-SSH. A forward only ever targets a `Skyr/Container.Pod.Port`, so the type may be
-left out and the port's own name (as `skyr resources list` prints it)
-identifies it:
+SSH. A port's ID as `skyr resources list` prints it pastes in verbatim; since a
+forward only ever targets a `Skyr/Container.Pod.Port`, the type may also be left
+out and the port named alone:
 
 ```sh
+skyr port-forward stockholm:Skyr/Container.Pod.Port:web-1a2b3c:8080/tcp 8080
 skyr port-forward web-1a2b3c:8080/tcp 8080
-skyr port-forward acme/shop::main::stockholm:Skyr/Container.Pod.Port:web-1a2b3c:8080/tcp 8080
 ```
 
 Anything else — a `Skyr/Container.Pod`, say — is refused before the tunnel is
