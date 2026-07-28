@@ -146,6 +146,21 @@ directly as `image` values. `containers` is a **name-keyed map**
 both are hard limits. Containers in the same pod share a network namespace, so
 siblings reach each other on `localhost`.
 
+**Narrowing the build context.** Everything under `context` goes to the
+builder, so a `COPY . .` bakes in whatever is lying around — `node_modules`, a
+stray `.env`, a local build directory. The optional `ignorefile` input excludes
+paths, and like `containerfile` it takes the file's *content*, not a path to
+it: `ignorefile: Path.read(./app/.containerignore)`, or the patterns written
+inline. The syntax is Docker's and podman's, not gitignore's — one pattern per
+line, `#` comments, anchored at the context root (`node_modules` excludes the
+top-level entry only, `**/node_modules` excludes it at any depth), `*` and `?`
+never crossing a `/`, and a leading `!` negating with the *last* matching
+pattern deciding (`*` followed by `!dist` ships `dist/` and nothing else).
+There is no filename convention: a `.containerignore` sitting in the context is
+an ordinary file until something passes it as this input, so the patterns may
+live anywhere or come from any file. Excluded files never reach the builder at
+all, and a line that isn't a valid pattern fails the build naming it.
+
 ### Open ports — how ingress works
 
 Every pod gets a **public, internet-routable IPv6** (`pod.address`). By
