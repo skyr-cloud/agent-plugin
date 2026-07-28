@@ -715,7 +715,9 @@ Module signatures are two curls away: the reference index above lists every
 `Std/*` and first-party `Skyr/*` module with a summary, and each module's own
 markdown carries one `### <ExportName>` section per export — unqualified names,
 types first, then functions and values — each with its signature, docs, and a
-bullet per field:
+bullet per field. Modules generated from a Terraform provider's live schema
+(`Skyr/AWS/*`, `HashiCorp/Random`) are not in the index; `~docs/terraform.md`
+covers those, and their field names come from the provider's schema.
 
 ```sh
 # the whole module
@@ -724,9 +726,14 @@ curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md
 # every export it has, in page order
 curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n '^### '
 
-# one export in full — signature, docs, fields
-curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n -A 40 '^### Pod$'
+# one export's whole section, ending at the next export's heading
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | sed -n '/^### Pod$/,/^### /p'
 ```
+
+A name that is both a type and a constructor — `Pod` the output record and
+`Pod` the resource call — has a section apiece, so that last command prints
+both. Sections run long, so prefer the range form over `grep -A <n>`, which
+cuts off mid-section.
 
 Permissions are documented next to the operation that needs them: wherever a
 page describes something IAM gates, it carries a `> *IAM*:` line naming the

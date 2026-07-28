@@ -246,8 +246,8 @@ import acme/platform/Database         // cross-repo (needs Package.scle, below)
   `let Config`.
 - **Doc comments are markdown**: `///` documents the item that follows it, and
   a leading `//!` block at the top of a file documents the module itself.
-  Editor tooling shows them on hover, and the module reference served by the
-  instance is generated from them.
+  Editor tooling shows a `///` doc on hover, and the module reference served
+  by the instance is generated from both.
 
 ```scl
 type Port Int
@@ -436,10 +436,11 @@ curls. The reference index above groups every documented module by namespace —
 `Std/*` and every first-party `Skyr/*` module — one line each with a summary,
 each linking to that module's own markdown.
 
-A module's markdown is shaped for grepping: the module's narrative sits between
-the `# <Namespace>/<Module>` title and the first `##` section, then one
-`### <ExportName>` section per export — types first, then functions and values
-— each carrying its signature, its documentation, and a bullet per field or
+A module's markdown is shaped for grepping: the module's narrative runs from
+the `# <Namespace>/<Module>` title down to the `## Types` /
+`## Functions & Values` sections, carrying `##` headings of its own, and each
+export then gets one `### <ExportName>` section — types first, then functions
+and values — with its signature, its documentation, and a bullet per field or
 parameter.
 
 ```sh
@@ -449,16 +450,18 @@ curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md
 # every export it has, in page order
 curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n '^### '
 
-# one export in full — signature, docs, fields
-curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | grep -n -A 40 '^### Pod$'
+# one export's whole section, ending at the next export's heading
+curl -s https://skyr.foo/~docs/scl/reference/Skyr/Container.md | sed -n '/^### Pod$/,/^### /p'
 ```
 
 Export names in the headings are unqualified — `### Pod`, not
 `### Container.Pod` — and a name that is both a type and a constructor gets a
-section apiece. Modules generated from a Terraform provider's live schema
-(`Skyr/AWS/*`, `HashiCorp/Random`) are not in the index — `~docs/terraform.md`
-covers how they work, and their field names come from the provider's own
-schema, so trust editor completions over guessing.
+section apiece, so the range above prints both. Sections run long (a resource
+constructor's is routinely 60+ lines), so prefer that form over `grep -A <n>`,
+which cuts off mid-section. Modules generated from a Terraform provider's live
+schema (`Skyr/AWS/*`, `HashiCorp/Random`) are not in the index —
+`~docs/terraform.md` covers how they work, and their field names come from the
+provider's own schema, so trust editor completions over guessing.
 
 For exact language semantics beyond the docs (typing rules, evaluation order),
 the formal SCL specification PDF ships alongside Skyr releases on dl.skyr.cloud.
