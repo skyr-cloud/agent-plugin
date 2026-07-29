@@ -293,8 +293,9 @@ let cert = account.DNS01Certificate({
 ```
 
 `directoryUrl` must be an `https` CA on the public internet: a deployed
-account refuses a private, loopback or link-local directory (an internal CA is
-reachable only under `skyr run`, which hosts the plugin on your own machine).
+account refuses a loopback, private, link-local, or otherwise non-public
+directory (an internal CA is reachable only under `skyr run`, which hosts the
+plugin on your own machine).
 The same restriction applies to the hosts the challenge self-check reaches, so
 an HTTP-01 domain and a DNS-01 zone's nameservers have to resolve publicly —
 but there it shows up as a certificate that waits in its challenge state
