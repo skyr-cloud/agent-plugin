@@ -295,8 +295,11 @@ let cert = account.DNS01Certificate({
 `directoryUrl` must be an `https` CA on the public internet: a deployed
 account refuses a private, loopback or link-local directory (an internal CA is
 reachable only under `skyr run`, which hosts the plugin on your own machine).
-The same holds for the hosts the challenge self-check reaches, so an HTTP-01
-domain has to resolve publicly.
+The same restriction applies to the hosts the challenge self-check reaches, so
+an HTTP-01 domain and a DNS-01 zone's nameservers have to resolve publicly —
+but there it shows up as a certificate that waits in its challenge state
+rather than one that fails, since an unreachable host is indistinguishable
+from a challenge that is not in place yet.
 
 Certificates/chains are public PEM outputs; the private key stays sealed in
 the secrets vault — deliver it to the terminating container as a pod `files`
