@@ -29,9 +29,11 @@ Two file kinds share the language:
   expression; iteration is `List.map`/comprehensions; "variables" are
   immutable `let` bindings.
 - **Resource calls look like function calls** (`Artifact.File({...})`) and
-  return records of *outputs*. Referencing an output of resource A in the
-  inputs of resource B is what creates the dependency edge A → B. There is no
-  explicit `depends_on`.
+  return records of *outputs*. Referencing an output of resource A is what
+  creates the dependency edge A → B — whether B's inputs are built from it,
+  or it only decided that B is declared at all (`if (a.ready) B({...})`).
+  There is no explicit `depends_on`: data and control flow are both tracked
+  for you.
 - **Types are structural.** Records match by shape, not name. Inference is
   strong; annotate only when the compiler asks or for documentation. It never
   guesses: an `if`/`try`/list/dict whose parts share no common type, or a
@@ -365,8 +367,10 @@ Artifact.File({
 
 Rules that matter in practice:
 
-- **Dependencies are output references.** If B's inputs mention `a.someOutput`,
-  B waits for A. No reference, no ordering.
+- **Dependencies are output references — in inputs *or* in control flow.** If
+  B's inputs mention `a.someOutput`, B waits for A; so does a B declared inside
+  `if (a.someOutput …)`, since whatever decided B exists is a dependency of B
+  too (and outlives it on teardown). No reference anywhere, no ordering.
 - **Idempotent repeats**: declaring the same resource twice with identical
   inputs is fine (both resolve to one resource); twice with different inputs
   is an eval-time error.

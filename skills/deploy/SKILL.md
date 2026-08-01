@@ -35,6 +35,12 @@ deploys to a different Skyr instance, substitute that instance's host.
   resources until reality matches. Pushing a new commit to the same branch
   rolls the environment forward; resources shared between old and new config
   are *adopted* (ownership transfers), not recreated.
+- **An edge comes from using another resource's outputs** — either building a
+  resource's inputs from them, or gating its declaration on them
+  (`if (job.exitCodes["job"] == 0) Container.Pod({...})`). There is no
+  `depends_on`; both kinds are worked out for you. Edges order creation and,
+  reversed, teardown: nothing is destroyed while something depending on it is
+  still there.
 - Deleting a ref tears the environment down:
   `git push skyr --delete feature-x` destroys everything that environment
   owns, in dependency order.
@@ -447,8 +453,9 @@ let serve = if (migrate.exitCodes["migrate"] == 0)
 ```
 
 The gate lives in the `if` condition, not the pod's inputs, so `serve`'s
-identity stays stable. An `else` branch handles remediation on a final non-zero
-exit.
+identity stays stable — and gating on `migrate` is an edge all the same, so
+teardown destroys `serve` first and `migrate` outlives it. An `else` branch
+handles remediation on a final non-zero exit.
 
 **Cron** is a job pod whose *name* embeds a tick value from `Time.now` (or
 `Time.tick(interval, offset)` for an offset schedule like "04:00 UTC daily").
