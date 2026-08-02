@@ -194,11 +194,15 @@ supported**.
 ## Expressions
 
 Everything is an expression; there are no statements inside function bodies.
+`;` is not a statement terminator — it is the **discard operator**, itself an
+expression: `a; b` evaluates both operands and yields `b`. There is no trailing
+`;` anywhere.
 
 ```scl
 let status = if (enabled) "on" else "off"   // if-expression; parens required
 let maybe = if (count > 0) count            // no else → type is Int?
 let two = let x = 1; x + 1                  // inline let: binding; body
+let last = (prepare(); result)              // discard: both run, value is `result`
 
 // Anonymous functions (closures). Param types inferred when context knows them.
 let double = fn(x: Int) x * 2
@@ -225,7 +229,26 @@ let safe = try risky(input)
 
 Operator notes: `+` concatenates strings; `Int`+`Float` arithmetic yields
 `Float`; integer division truncates (`10 / 3` → `3`); `as` (type cast) binds
-tighter than every binary operator, so `(1 + x) as Int` needs the parens.
+tighter than every binary operator, so `(1 + x) as Int` needs the parens. `;`
+binds loosest and is the only right-associative one — `a; b; c` is `a; (b; c)`,
+its type is the last operand's, and any type may be discarded.
+
+A discard is a textual sequence, not an ordering: the left operand runs (that is
+the point — only its *value* is dropped), but `;` adds no dependency edge, a
+pending left operand neither blocks nor infects the result, and the result's
+dependencies are the right operand's alone. Order resources by referencing their
+outputs, as everywhere else.
+
+Where a `;` lands is settled by one rule: **it belongs to the nearest enclosing
+binding still awaiting one; only an unclaimed `;` is a discard.** So a `let`'s
+bound value and module scope reserve theirs — `let x = A(); B()` at module scope
+is an inline let (`x` = `A()`, in scope over `B()` only, so a later mention of
+`x` is an undefined-variable error), and `export let x = A(); B()` is a hard
+error suggesting `export let x = (A(); B())`. Brackets of every kind reset that
+(`f(a; b, c)` is two arguments), keyword bounds do not — parenthesize to chain
+in a then-branch, a `switch` arm or a `try` body. A trailing body swallows a
+following `; e`, so `if (c) A(); B()` makes `B()` conditional; write
+`(if (c) A()); B()` for an unconditional one.
 
 ## Modules and imports
 
