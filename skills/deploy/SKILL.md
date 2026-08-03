@@ -602,8 +602,15 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`IAM.Role`/`IAM.Policy`** — org-scoped authorization: a `Role` is an
   empty subject; a `Policy` grants `subjects` (role QIDs) `verbs` over
   `objects`, all `*`-pattern matchers, default-deny. A repo's deployments
-  act as its deployment role (default `Super`). Full model — matcher
-  semantics, object shapes, what each verb gates:
+  act as its deployment role (default `Super`). A subject may **not**
+  wildcard its org: a `*` before the first `::` — a bare `*` included — is
+  rejected at authoring time, so name each org (a `*` past the org segment,
+  like `"acme::*"`, is fine). The one bare-string subject is `Anonymous`, the
+  global sentinel every signed-out caller acts as: naming it publishes the
+  granted reads to the public — and `repository:View` on it makes the source
+  cloneable over `ssh://nobody@host/org/repo` — while only a small read
+  allowlist ever takes effect for it. Full model — matcher semantics, object
+  shapes, what each verb gates, the anonymous surface:
   `curl -s https://skyr.foo/~docs/iam.md`.
 - **`Rollout.Group({ name, members })`** — groups the resources created
   inside its `members` closure under one parent resource, giving them a
