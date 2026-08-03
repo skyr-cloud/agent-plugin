@@ -327,8 +327,9 @@ mounts: #{ "/run/tls": { volume: tls, readOnly: true, userId: 1000 } }
 ```
 
 A volume carrying any `.secret` is mounted owner-only (`0700` root dir, `0600`
-files) owned by the mount's `userId`/`groupId`, defaulting to root — so name the
-uid the image's `USER` runs as, or the process cannot read its own key.
+files — an explicit `permissions` on the mount overrides the mode) owned by
+the mount's `userId`/`groupId`, defaulting to root — so name the uid the
+image's `USER` runs as, or the process cannot read its own key.
 Grants are explicit: the deployment role needs
 `secret:View`/`Write`/`Delete` on the key's and the ACME account's
 resource-scoped secrets (an `IAM.Policy` with wildcard objects like
@@ -509,12 +510,12 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   container's `mounts` dict keyed by absolute path:
   `#{ "/data": { volume: v } }`, with optional
   `readOnly`/`subPath`/`permissions`/`userId`/`groupId`; two containers mounting
-  the same volume must spell the same permissions and owner. Read-only mounts of
-  seeded ephemeral content update in place when the content changes, unless the
-  new content outgrows the disk the pod claimed (each file is rounded up to a
-  whole 4 KiB page, so adding a non-empty one always does) — that replaces the
-  pod, as does every
-  other mount change: the volume's name or size, which mounts share it, and a
+  the same ephemeral volume must spell the same permissions and owner.
+  Read-only mounts of seeded ephemeral content update in place when the content
+  changes, unless the new content outgrows the disk the pod claimed (each
+  non-empty file rounds up to a whole 4 KiB page, so adding one to a volume
+  that already holds one does) — that replaces the pod, as does every other
+  mount change: the volume's name or size, which mounts share it, and a
   writable mount's seed. A persistent volume's identity includes
   its owning environment, so another repository's volume of the same name is a
   different volume with its own data; mounting one needs `resource:MountVolume`
@@ -534,9 +535,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   value that can't be an env var — TLS keys, keytabs, anything binary). The
   plaintext is resolved inside the platform at pod materialization and never
   enters git, the stored resource inputs, or any log; a volume seeded with any
-  secret is mounted owner-only (`0700`/`0600`) under the mount's
-  `userId`/`groupId`, root by default. Consumption is
-  IAM-gated with no implicit grant: the repo's **deployment role** must hold
+  secret is mounted owner-only (`0700`/`0600`, overridable with an explicit
+  `permissions`) under the mount's `userId`/`groupId`, root by default.
+  Consumption is IAM-gated with no implicit grant: the repo's **deployment
+  role** must hold
   `secret:View` on each consumed secret, via an ordinary policy stanza —
   `IAM.Policy({ name: "read-secrets", subjects: [deployer.qid], verbs:
   ["secret:View"], objects: ["<org>/<repo>!*", "<org>/<repo>::*"] })` — or
