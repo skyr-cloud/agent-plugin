@@ -38,7 +38,9 @@ deploys to a different Skyr instance, substitute that instance's host.
 - **An edge comes from using another resource's outputs** — either building a
   resource's inputs from them, or gating its declaration on them
   (`if (job.exitCodes["job"] == 0) Container.Pod({...})`). There is no
-  `depends_on`; both kinds are worked out for you. Edges order creation and,
+  `depends_on`; both kinds are worked out for you, and SCL's
+  `with (a) B({...})` writes the edge explicitly where neither flow carries it
+  (the `scl` skill covers it). Edges order creation and,
   reversed, teardown: nothing is destroyed while something depending on it is
   still there.
 - Deleting a ref tears the environment down:

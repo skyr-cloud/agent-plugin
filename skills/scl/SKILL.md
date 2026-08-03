@@ -203,6 +203,7 @@ let status = if (enabled) "on" else "off"   // if-expression; parens required
 let maybe = if (count > 0) count            // no else → type is Int?
 let two = let x = 1; x + 1                  // inline let: binding; body
 let last = (prepare(); result)              // discard: both run, value is `result`
+let gated = with (db) { url: db.url }       // exists only once `db` does (below)
 
 // Anonymous functions (closures). Param types inferred when context knows them.
 let double = fn(x: Int) x * 2
@@ -249,6 +250,17 @@ error suggesting `export let x = (A(); B())`. Brackets of every kind reset that
 in a then-branch, a `switch` arm or a `try` body. A trailing body swallows a
 following `; e`, so `if (c) A(); B()` makes `B()` conditional; write
 `(if (c) A()); B()` for an unconditional one.
+
+`with (subject) body` gates the body on the subject's **existence**. A pending
+value anywhere inside the subject makes the whole expression pending — the body
+does not run. Once the subject fully exists, the body evaluates carrying the
+subject's dependencies: resources declared while it runs (even inside functions
+it calls) depend on whatever the subject depends on, and so does the resulting
+value. It is the manual form of the edge `if (a.ready) …` creates from control
+flow — same gating, no condition to invent, and the type is simply the body's
+(no optional wrapping like an else-less `if`). Grammatically it sits with `if`:
+parens required around the subject, and the trailing body extends rightward, so
+`with (a) A(); B()` gates `B()` too.
 
 ## Modules and imports
 
@@ -393,7 +405,9 @@ Rules that matter in practice:
 - **Dependencies are output references — in inputs *or* in control flow.** If
   B's inputs mention `a.someOutput`, B waits for A; so does a B declared inside
   `if (a.someOutput …)`, since whatever decided B exists is a dependency of B
-  too (and outlives it on teardown). No reference anywhere, no ordering.
+  too (and outlives it on teardown). No reference anywhere, no ordering — and
+  `with (a) B({...})` adds the edge by hand, gating B on `a`'s existence with
+  no condition to invent (see Expressions).
 - **Idempotent repeats**: declaring the same resource twice with identical
   inputs is fine (both resolve to one resource); twice with different inputs
   is an eval-time error.
@@ -419,6 +433,20 @@ declares a type whose instances (created via the constructor the definition
 returns, typically re-exported to consumer repos) register themselves with the
 defining deployment, which collects the live set and folds it into its own
 resources. Look up `Skyr/Resource` for the exact shape.
+
+When a function of yours wraps a resource call and returns a record built from
+it, wrap the return in `with`:
+
+```scl
+export let makeFile = fn(name: Str, contents: Str)
+    let made = Artifact.File({ name, contents });
+    with (made) { name, url: made.url }
+```
+
+Gated on the resource's existence, every field of the record carries the edge —
+fields that merely echo inputs (`name` here) included, so a consumer can depend
+on any of them and still wait for the file. First-party plugin constructors
+follow the same idiom.
 
 ## Secrets
 
