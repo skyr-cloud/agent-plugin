@@ -464,9 +464,9 @@ let db = Secret.get("db-password")   // raises Secret.NotFound if unresolved
 ```
 
 Hand the `qid` to something that resolves it at deploy time. In the container
-plugin, a pod's `env` and `files` are single maps whose values are `.literal("…")`
-or `.secret(qid)` — you write `.secret(Secret.get(name).qid)`, which the `deploy`
-skill covers. The values themselves are set out of band with
+plugin, a pod's or container's `env` and an ephemeral volume's `files` seed are
+maps whose values are `.literal("…")` or `.secret(qid)` — you write
+`.secret(Secret.get(name).qid)`, which the `deploy` skill covers. The values themselves are set out of band with
 `skyr secrets set|list|delete`, never committed to git.
 
 ## Looking up documentation

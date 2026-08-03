@@ -248,7 +248,7 @@ certificates automatically and reverse-proxies the app over `localhost`:
 
 ```scl
 let caddyfile = Container.ephemeralVolume({
-    files: #{ "Caddyfile": "example.com\n\nreverse_proxy localhost:8080\n" },
+    files: #{ "Caddyfile": .literal("example.com\n\nreverse_proxy localhost:8080\n") },
 })
 
 let pod = Container.Pod({
@@ -311,8 +311,25 @@ rather than one that fails, since an unreachable host is indistinguishable
 from a challenge that is not in place yet.
 
 Certificates/chains are public PEM outputs; the private key stays sealed in
-the secrets vault — deliver it to the terminating container as a pod `files`
-entry (`.secret(key.pem)`). Grants are explicit: the deployment role needs
+the secrets vault — deliver it by seeding an ephemeral volume with
+`.secret(key.pem)` and mounting that volume into whatever terminates TLS:
+
+```scl
+let tls = Container.ephemeralVolume({
+    files: #{
+        "tls.crt": .literal("{cert.certificate.pem}{cert.certificate.chainPem}"),
+        "tls.key": .secret(key.pem),
+    },
+})
+
+// …inside the terminating container: reads /run/tls/tls.{crt,key}
+mounts: #{ "/run/tls": { volume: tls, readOnly: true, userId: 1000 } }
+```
+
+A volume carrying any `.secret` is mounted owner-only (`0700` root dir, `0600`
+files) owned by the mount's `userId`/`groupId`, defaulting to root — so name the
+uid the image's `USER` runs as, or the process cannot read its own key.
+Grants are explicit: the deployment role needs
 `secret:View`/`Write`/`Delete` on the key's and the ACME account's
 resource-scoped secrets (an `IAM.Policy` with wildcard objects like
 `"<org>/<repo>::*"` covers them — same stanza as the Secrets bullet below).
@@ -485,11 +502,20 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
   its own region). `Container.ephemeralVolume({ files, size, name })` is
   scratch space living and dying with the pod, optionally seeded with
-  in-config files (see the Caddy example). Mount via a container's `mounts`
-  dict keyed by absolute path: `#{ "/data": { volume: v } }`, with optional
-  `readOnly`/`subPath`/`permissions`/`userId`/`groupId`. Read-only mounts of
-  seeded ephemeral content update in place when the content changes; every
-  other mount change replaces the pod. A persistent volume's identity includes
+  `files: #{ "<path relative to the mount root>": .literal("…") }` — values are
+  the same two arms as `env` (`.literal(…)`/`.secret(qid)`), and a bare string
+  is a type error (see the Caddy example). **Mounting a seeded volume is how
+  files reach a container** — there is no pod-level file input. Mount via a
+  container's `mounts` dict keyed by absolute path:
+  `#{ "/data": { volume: v } }`, with optional
+  `readOnly`/`subPath`/`permissions`/`userId`/`groupId`; two containers mounting
+  the same volume must spell the same permissions and owner. Read-only mounts of
+  seeded ephemeral content update in place when the content changes, unless the
+  new content outgrows the disk the pod claimed (each file is rounded up to a
+  whole 4 KiB page, so adding a non-empty one always does) — that replaces the
+  pod, as does every
+  other mount change: the volume's name or size, which mounts share it, and a
+  writable mount's seed. A persistent volume's identity includes
   its owning environment, so another repository's volume of the same name is a
   different volume with its own data; mounting one needs `resource:MountVolume`
   on it (see the sharing section above).
@@ -500,22 +526,32 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `skyr secrets list` shows metadata only (never values); `skyr secrets delete`
   clears a value. Values are repository-scoped by default, with
   `--environment [name]` for a per-environment override. In config, read them
-  via `Std/Secret`: `Secret.get(name).qid` is an opaque reference. A pod's `env`
-  and its `files` are single maps whose values are `.literal("…")` (a plain
-  value) or `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`,
-  in a container/pod `env` var or a pod `files` entry (an absolute path). The
+  via `Std/Secret`: `Secret.get(name).qid` is an opaque reference. Everywhere a
+  value may be sensitive it is written `.literal("…")` (a plain value) or
+  `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`. Two places
+  take such values: a pod's or a container's `env`, and an ephemeral volume's
+  `files` seed, mounted into the containers that need it (the only route for a
+  value that can't be an env var — TLS keys, keytabs, anything binary). The
   plaintext is resolved inside the platform at pod materialization and never
-  enters git, the stored resource inputs, or any log. Consumption is
+  enters git, the stored resource inputs, or any log; a volume seeded with any
+  secret is mounted owner-only (`0700`/`0600`) under the mount's
+  `userId`/`groupId`, root by default. Consumption is
   IAM-gated with no implicit grant: the repo's **deployment role** must hold
   `secret:View` on each consumed secret, via an ordinary policy stanza —
   `IAM.Policy({ name: "read-secrets", subjects: [deployer.qid], verbs:
   ["secret:View"], objects: ["<org>/<repo>!*", "<org>/<repo>::*"] })` — or
-  `Secret.get` raises `Secret.NotFound` at eval. Because the pinned version
-  is part of the pod's identity, rotating a secret (`skyr secrets set` again)
-  recreates the pod to pick up the new value — rotation is a deploy, not a hot
-  reload. `skyr run` can't resolve secret plaintext locally, so it rejects a pod
-  with any `.secret(…)` value in `env`/`files` (a `.literal`-only pod runs);
-  deploy the environment instead.
+  `Secret.get` raises `Secret.NotFound` at eval. **Rotation** (`skyr secrets
+  set` again) takes effect on the next deployment, and how depends on where the
+  secret is consumed: in `env` the pinned version is part of the pod's identity,
+  so the pod is **recreated**; in a read-only volume seed the content is
+  identity-excluded, so the new plaintext is written into the running pod **with
+  no restart** — except when it outgrows the pod's disk claim, and except for a
+  writable mount's seed, both of which recreate. Live delivery is not atomic and
+  a process that reads its files once at startup never sees it: bump the
+  volume's `name` to force a fresh pod. `skyr run` can't resolve secret
+  plaintext locally, so it rejects a pod with any `.secret(…)` value in an `env`
+  or a mounted volume's seed (a `.literal`-only pod runs); deploy the
+  environment instead.
 - **Knobs.** `Skyr/Knob.{Text,Toggle,Integer,Choice}` are manually provided,
   per-environment values a human turns out of band — a feature flag, a banner
   string, a worker count, a deployment mode. Declare one like any resource
