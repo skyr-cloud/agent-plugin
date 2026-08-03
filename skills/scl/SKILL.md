@@ -367,9 +367,10 @@ in an `IAM.Policy` of its own (policies are always evaluated in the object's
 org, so no org can grant itself access to another's repos). Missing the grant
 fails the deployment with an incident naming the repo and the verb.
 
-A policy subject must name its org outright: a `*` in the subject's org segment
-— everything before the first `::`, a bare `*` included — is rejected at
-authoring time (a `*` past it, like `"acme::*"`, is fine). The one exception is
+A policy subject must name its org outright: a `*` in the subject's organization
+identity — the prefix before the first `/` or `::`, a bare `*` included — is
+rejected at authoring time (a `*` past it, like `"acme::*"` or `"acme/*::…"`, is
+fine). The one exception is
 the bare `Anonymous` sentinel, which an org names as a subject to publish reads
 — and, via `repository:View`, cloneable source over `ssh://nobody@…` — to
 signed-out callers; only a small read allowlist ever takes effect for it.

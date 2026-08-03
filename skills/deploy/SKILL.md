@@ -603,9 +603,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   empty subject; a `Policy` grants `subjects` (role QIDs) `verbs` over
   `objects`, all `*`-pattern matchers, default-deny. A repo's deployments
   act as its deployment role (default `Super`). A subject may **not**
-  wildcard its org: a `*` before the first `::` — a bare `*` included — is
-  rejected at authoring time, so name each org (a `*` past the org segment,
-  like `"acme::*"`, is fine). The one bare-string subject is `Anonymous`, the
+  wildcard its org identity: a `*` before the first `/` or `::` — a bare `*`
+  included — is rejected at authoring time, so name each org (a `*` past the
+  org, like `"acme::*"` or `"acme/*::…"`, is fine). The one bare-string
+  subject is `Anonymous`, the
   global sentinel every signed-out caller acts as: naming it publishes the
   granted reads to the public — and `repository:View` on it makes the source
   cloneable over `ssh://nobody@host/org/repo` — while only a small read
