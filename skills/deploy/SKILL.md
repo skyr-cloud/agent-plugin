@@ -183,7 +183,8 @@ let http = pod.Port({ port: 8080, public: true })
 
 `public: true` opens the port to the internet — both on the pod's IPv6 and
 on any bound IPv4 address (next section). Without it the port only accepts
-traffic from attached internal networks. `protocol` defaults to `"tcp"`.
+traffic from attached internal networks. `protocol` defaults to `.tcp`
+(`.udp` is the other option).
 
 ### A stable public IPv4
 
