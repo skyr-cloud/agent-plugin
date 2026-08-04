@@ -213,7 +213,8 @@ let doubled = List.map([1, 2, 3], fn(x) x * 2)
 let identity = fn<T>(x: T) x
 let getName = fn<T <: { name: Str }>(item: T) item.name
 
-// List comprehensions: for iterates, if filters; clauses stack
+// List comprehensions: for iterates, if filters; clauses chain and the
+// generated values splice in flat (see "List elements" below)
 let evens = [for (x in items) if (x / 2 * 2 == x) x]
 let pairs = [for (x in xs) for (y in ys) x + y]
 
@@ -261,6 +262,44 @@ flow — same gating, no condition to invent, and the type is simply the body's
 (no optional wrapping like an else-less `if`). Grammatically it sits with `if`:
 parens required around the subject, and the trailing body extends rightward, so
 `with (a) A(); B()` gates `B()` too.
+
+### List elements: `for` and `if` generate, results splice in flat
+
+Inside a `[…]` literal, `for` and `if` are *element forms*, not expressions.
+A plain expression element contributes exactly one value; a `for`/`if` element
+*generates* zero or more. The body of a `for`/`if` element is itself an
+element, so the forms chain arbitrarily — and everything a chain generates is
+spliced into the surrounding list at that position, in order. The result is
+always one flat list; comprehension elements never introduce nesting.
+
+```scl
+[
+    1,                           // plain element — exactly one value
+    for (e in [2, 3, 4]) e,      // generates 2, 3, 4 — spliced, not nested
+    if (false) 5,                // generates nothing (no nil placeholder)
+    for (e in [10, 20, 30])      // chained clauses multiply out:
+        if (e > 15)              //   drops e = 10
+            for (l in List.range(e))
+                l + 1,           // runs once per (e, l) pair: 20 + 30 = 50 times
+]
+// = [1, 2, 3, 4, 1, 2, …, 20, 1, 2, …, 30] — one flat [Int], 54 elements
+```
+
+- **A `for` under a `for` is a cross product**: the innermost expression runs
+  once per surviving combination of the binders in scope, each run
+  contributing one element. Flattening a nested list is exactly this:
+  `[for (inner in nested) for (x in inner) x]`. To *keep* nesting, make the
+  body a list literal of its own: `[for (x in xs) [x]]` is `[[Int]]`.
+- `for (x in e)` iterates a list only (`e: [T]`); any other iterable type is
+  a compile error.
+- **The element `if` takes no `else` and is not the optional-typed else-less
+  `if` expression**: `[if (c) n]` is `[Int]` with zero or one elements — no
+  `nil` enters the list. With an `else` it parses as an ordinary expression
+  element again, contributing exactly one value: `[if (c) a else b]`.
+- An `if` can guard any element, including a whole `for` chain — so
+  `[if (extra) for (x in xs) x]` splices `xs` conditionally.
+- Each generated value's type joins into the list's element type exactly like
+  a plain element's does.
 
 ## Modules and imports
 
