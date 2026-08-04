@@ -384,6 +384,14 @@ reaches the resource call. Reading a foreign repo's top-level resource output
 is remote state; calling a function it exports creates a resource owned by
 *your* deployment.
 
+`Std/Env` deliberately follows the opposite rule: an `Env.*` read answers for
+the package its source is *written in*, so a branch-/tag-pinned dependency's
+code sees the dependency's own current deployment even when you call it. In a
+hash-pinned dependency there is no deployment behind the package, and an
+`Env.*` read raises the catchable `Env.NoDeployment`. (`Std/Secret` is
+caller-based like effects: lookups always resolve the deploying repo's
+secrets.)
+
 ## Resources
 
 A resource call takes a record of inputs and returns a record of outputs.
@@ -428,6 +436,8 @@ Rules that matter in practice:
   untouched ones preserved.
 - Deployment identity (org / repo / environment names) is available at eval
   time via `Std/Env`: `Env.environment.name`, `Env.repository.name`, etc.
+  Each read answers for the package it is written in — foreign-package code
+  reports the foreign repo's own deployment, not the evaluating one.
 
 **Do not guess plugin-module signatures.** Plugin modules (`Skyr/Container`,
 `Skyr/DNS`, `Skyr/IAM`, `Skyr/PKI`, `Skyr/HTTP`, `Skyr/Rollout`,
