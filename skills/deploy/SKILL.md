@@ -238,10 +238,11 @@ zone.CNAMERecord({ name: "www", target: "example.com" })
   `MXRecord`, `SRVRecord`, `NSRecord` (sub-delegation), `CAARecord`.
 - Bad inputs raise `DNS.InvalidDnsInput` at evaluation time, so `skyr check`
   catches them: a name outside the grammar, a CNAME or NS at the apex, a CAA
-  `flags` outside 0–255, and a `ttl`/`defaultTtl` given as a calendar-month
-  duration (`Time.month`, `Time.year`). TTLs are whole seconds — use a
-  multiple of `Time.minute`, `Time.hour` or `Time.day`. Records default to the
-  zone's `defaultTtl`, itself 5 minutes unless set.
+  `flags` outside 0–255, and a `ttl`/`defaultTtl` that is not a whole number of
+  seconds of at least one — which rules out a calendar-month duration
+  (`Time.month`, `Time.year`) as well as anything sub-second or fractional. Use
+  a multiple of `Time.second`, `Time.minute`, `Time.hour` or `Time.day`.
+  Records default to the zone's `defaultTtl`, itself 5 minutes unless set.
 - The AAAA record above tracks the pod's IPv6 because Skyr re-evaluates the
   config and updates the record when the pod is replaced. Anything *outside*
   Skyr should reference the stable IPv4 or the domain, never a pod IPv6.
