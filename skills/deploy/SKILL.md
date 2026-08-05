@@ -784,12 +784,17 @@ entry per failing case:
 fail  podName › when it disagrees
         toEqual: expected "main-web", got "main-api"
         at [fn] (acme/shop/Main 15:3,15:58)
+        …
 ```
 
-`fail` is an expectation the case did not meet, `raise` an exception it let
-escape, and `await` a case that reached no verdict — which is what reading a
-resource looks like, since a test run holds no resource state and every
-resource output is pending. The same lines come out of `skyr test` locally,
+(The trace runs on for as many frames as the call had, and the log adds its
+usual timestamp and severity prefix.) `fail` is an expectation the case did not
+meet, `raise` an exception it let escape, and `await` a case that reached no
+verdict at all. Reading a resource is **usually a `fail`**, not an `await`: a
+test run holds no resource state, so every resource output is pending, and an
+expectation over one is a `fail` whose `actual` is `<pending>` — only a case
+that made no expectation and merely computed from a resource is an `await`.
+Both name the resource awaited. The same lines come out of `skyr test` locally,
 which is where to reproduce and fix it.
 
 Incidents are listed on the website at `/<org>/~i` (the CLI doesn't surface
