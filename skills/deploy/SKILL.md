@@ -108,6 +108,19 @@ A deployment moves through five states:
   destroyed in dependency order.
 - **Down** — nothing left; terminal.
 
+**A commit's own tests run before anything is applied.** When the repository
+declares any (the `scl` skill covers writing them), Skyr runs them once for the
+commit — ahead of evaluating `Main.scl` at all, so a commit whose tests fail
+creates, updates and destroys nothing. On a push that means the deployment it
+would have replaced keeps serving untouched: the successor never adopts a
+resource and never starts the predecessor's teardown, so the old one sits in
+Lingering. On a fresh environment it means nothing is created. The blocked
+deployment stays **Desired** and retries on the ordinary backoff, still
+maintaining the resources it already owns — blocking withholds new work, never
+maintenance — until a commit whose tests pass supersedes it. `skyr test` runs
+the same cases locally and is what predicts the verdict; a repository with no
+test code is unaffected.
+
 Two things legitimately keep a deployment in **Desired forever** — that is
 normal operation, not a stuck rollout:
 
@@ -734,10 +747,11 @@ Failures surface as **incidents** — durable records that open when something
 is wrong long enough to matter, close automatically on recovery, and email
 every member of the owning org on both events. Removing the offending
 resource from the config also counts as recovery. The category names the
-user-visible consequence:
+user-visible consequence, least to most severe:
 
 | Category | Meaning |
 |---|---|
+| `TestFailure` | The commit failed its own tests, so Skyr rolled out nothing. Whatever was already deployed keeps serving. |
 | `BadConfiguration` | Skyr refuses to roll out config it determined invalid. The system works; the config doesn't. |
 | `CannotProgress` | The entity is stable, but something derived/dependent could not be applied. |
 | `InconsistentState` | Reality drifted from config and reconciliation can't close the gap. |
@@ -759,11 +773,30 @@ repeated to gigabytes) fails with an incident naming the limit hit. A budget
 failure is *not* an SCL exception — `try`/`catch` cannot intercept it; the fix
 is to bound the work each pass does.
 
+A **`TestFailure`** incident means the commit's own tests did not pass, so the
+deployment applied nothing (see the lifecycle section). Its message is the run's
+summary — `3 of 12 cases failed`, or the reason a run produced no summary at
+all, such as an exception raised outside every case. The per-case detail is in
+the **deployment log**, written once at the pass that decided the verdict, one
+entry per failing case:
+
+```
+fail  podName › when it disagrees
+        toEqual: expected "main-web", got "main-api"
+        at [fn] (acme/shop/Main 15:3,15:58)
+```
+
+`fail` is an expectation the case did not meet, `raise` an exception it let
+escape, and `await` a case that reached no verdict — which is what reading a
+resource looks like, since a test run holds no resource state and every
+resource output is pending. The same lines come out of `skyr test` locally,
+which is where to reproduce and fix it.
+
 Incidents are listed on the website at `/<org>/~i` (the CLI doesn't surface
 them). For diagnosis: `skyr deployments logs` shows evaluation and rollout
-errors (a `BadConfiguration` usually reproduces locally with `skyr check`);
-`skyr resources logs Skyr/Container.Pod:web` shows a specific resource,
-including container output from pods.
+errors (a `BadConfiguration` usually reproduces locally with `skyr check`, a
+`TestFailure` with `skyr test`); `skyr resources logs Skyr/Container.Pod:web`
+shows a specific resource, including container output from pods.
 
 ## Looking up documentation
 
