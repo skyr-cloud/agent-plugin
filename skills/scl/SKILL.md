@@ -3,8 +3,8 @@ name: scl
 description: >-
     Write SCL (Skyr Configuration Language) and SCLE. Use when creating or
     editing .scl or .scle files, authoring infrastructure-as-code targeting
-    Skyr, editing Main.scl or Package.scle, or looking up SCL syntax, types,
-    or standard-library documentation.
+    Skyr, editing Main.scl or Package.scle, writing or running a module's own
+    tests, or looking up SCL syntax, types, or standard-library documentation.
 ---
 
 # Writing SCL
@@ -527,6 +527,59 @@ maps whose values are `.literal("…")` or `.secret(qid)` — you write
 themselves are set out of band with `skyr secrets set|list|delete`, never
 committed to git.
 
+## Tests
+
+A module carries its own tests inline, marked with the `@test` annotation.
+Marked statements are type-checked wherever the module is compiled and left
+out of the program a deployment evaluates, so they cost a deployment nothing.
+The annotation only marks; the vocabulary comes from `Std/Test`.
+
+```scl
+import Std/Option
+
+@test
+import Std/Test                 // mark the import too — it is test-only
+
+let podName = fn(environment: Str, service: Str?)
+    "{environment}-{Option.unwrap(service)}"
+
+@test
+Test.group("podName", fn()
+    Test.it("joins the environment and the service", fn()
+        Test.expect(podName("main", "api")).toEqual("main-api")
+    );
+    Test.it("refuses a service that is not set", fn()
+        Test.expect(fn() podName("main", nil)).toRaise(Option.UnexpectedNil)
+    )
+)
+```
+
+- `Test.group(name, fn() …)` nests; `Test.it(name, fn() …)` declares one
+  **case** — spelled `it` because `case` is a keyword. Sibling calls inside a
+  body are joined with `;`, the discard operator (see Expressions).
+- Matchers are `Test.expect(v).toEqual(expected)` and
+  `Test.expect(fn() …).toRaise(SomeException)`. `toEqual`'s argument is typed
+  as the value's own type, so a mismatched literal is a *compile* error, not a
+  failing case.
+- A case fails if it raises uncaught, if an assertion is not satisfied, or if
+  it reaches no verdict at all. A failure fails that case only — the rest run.
+- **Any module statement can be marked** — `import`, `let`, `type`, or a bare
+  expression — but `@test export` is a hard error, and a statement *without*
+  the mark may not reference a binding, type, or import a `@test` statement
+  introduced. Test code reading ordinary code is free.
+- **An unmarked test statement runs nowhere** — a deployment no-ops it, and a
+  test run drops it as an unmarked bare expression. Mark it.
+
+**Tests are verdicts over values, never over resources.** A test run holds no
+resource state, so every resource output reads pending and a case that reaches
+for one *fails*, naming the resource it awaited. `Secret.get` and `Time.now`
+raise `Secret.Unavailable` / `Time.Unavailable`, and `Std/Env` reports a fixed
+placeholder identity; `Path.read` still reads the package's own files. So
+hoist the logic worth checking into pure functions over plain values — deriving
+a name, assembling an env map, validating a configuration — and let the
+resource declarations pass the results in. Anything that has to *happen* at
+deploy time (a probe, a smoke job) is not a test's business.
+
 ## Looking up documentation
 
 The Skyr docs are served as raw markdown, ideal for fetching and grepping.
@@ -581,11 +634,13 @@ the formal SCL specification PDF ships alongside Skyr releases on dl.skyr.cloud.
 
 ## Verifying your work
 
-Always finish by formatting and type-checking; never hand back unchecked SCL.
+Always finish by formatting and type-checking, and by running the package's
+tests when it has any; never hand back unchecked SCL.
 
 ```sh
 skyr fmt --write Main.scl   # canonical formatting, per file (omit --write to preview)
 skyr check                  # parse + resolve + type-check the whole package (no deploy)
+skyr test                   # run the package's @test cases (no deploy, no backends)
 skyr repl                   # interactive: evaluate expressions, inspect types
 ```
 
@@ -593,6 +648,14 @@ skyr repl                   # interactive: evaluate expressions, inspect types
   directory (override with `--root`). It stops before evaluation, so it
   catches syntax, resolution, and type errors — not eval-time errors like
   conflicting duplicate resource declarations.
+- `skyr test` takes the same `--root`/`--package` flags. It prints one line
+  per case — `pass`/`fail`/`raise`/`await`, then the case's group path and
+  name — with the expectation and the source trace under each failure, and
+  exits nonzero if any case failed, so it drops into a pre-commit hook or a CI
+  step. It deploys nothing and holds no resource state. Run it after adding or
+  changing test code, and after changing anything a case covers: a pushed
+  commit is gated on the same verdict before it applies anything, so a red
+  package will not roll out.
 - The package name is inferred from the `skyr`/`origin` git remote; override
   with `skyr check --package org/repo` when the inference fails (you'll see
   it default to `Local`).
