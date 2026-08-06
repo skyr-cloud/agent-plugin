@@ -191,7 +191,8 @@ Opening a port changes that:
 
 ```scl
 let http = pod.Port({ port: 8080, public: true })
-// http.address is "[<pod-ipv6>]:8080"
+// http.address is "[<pod-ipv6>]:8080", or "<pending>" until the pod's
+// address has been allocated
 ```
 
 `public: true` opens the port to the internet — both on the pod's IPv6 and
