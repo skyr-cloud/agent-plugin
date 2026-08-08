@@ -412,7 +412,9 @@ rejected at authoring time (a `*` past it, like `"acme::*"` or `"acme/*::…"`, 
 fine). The one exception is
 the bare `Anonymous` sentinel, which an org names as a subject to publish reads
 — and, via `repository:View`, cloneable source over `ssh://nobody@…` — to
-signed-out callers; only a small read allowlist ever takes effect for it.
+*anyone*: it is consulted whoever the caller acts as, signed-out callers, other
+orgs' roles and this org's own members alike. Only a small read allowlist ever
+takes effect for it.
 
 One exception to "any org": `Skyr/Resource` custom-resource instances must be
 registered against a definition in the *same* org — a cross-org consumer

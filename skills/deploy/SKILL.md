@@ -630,10 +630,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   included — is rejected at authoring time, so name each org (a `*` past the
   org, like `"acme::*"` or `"acme/*::…"`, is fine). The one bare-string
   subject is `Anonymous`, the
-  global sentinel every signed-out caller acts as: naming it publishes the
+  global sentinel meaning *anyone at all*: naming it publishes the
   granted reads to the public — and `repository:View` on it makes the source
-  cloneable over `ssh://nobody@host/org/repo` — while only a small read
-  allowlist ever takes effect for it. Full model — matcher semantics, object
+  cloneable over `ssh://nobody@host/org/repo` — reaching every caller alike,
+  signed out, signed in elsewhere, or a member of the org acting as a narrow
+  role, while only a small read allowlist ever takes effect for it. Full model — matcher semantics, object
   shapes, what each verb gates, the anonymous surface:
   `curl -s https://skyr.foo/~docs/iam.md`.
 - **`Rollout.Group({ name, members })`** — groups the resources created
