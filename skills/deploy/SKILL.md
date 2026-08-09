@@ -439,7 +439,9 @@ Container.Router({
   who may *initiate*. `source`/`destination` are CIDR strings matched on real
   addresses (`"0.0.0.0/0"` = anything), and transit passing through is filtered
   by the same rules. The router is the only filter — there's no second, per-pod
-  rule set to keep in step.
+  rule set to keep in step. It governs **access, not exposure**: denied traffic
+  still crosses the private network before it's dropped at the destination's
+  boundary, so an ACL is not a shield against volume.
 - **Chaining is transitive.** Two routers sharing a network route through each
   other, so joining a router gets you everything it routes, including onward
   routers — reachability exists only where a chain creates it. Source addresses
