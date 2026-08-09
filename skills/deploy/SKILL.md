@@ -438,8 +438,8 @@ Container.Router({
   **Stateful** — replies on established connections always pass, so rules govern
   who may *initiate*. `source`/`destination` are CIDR strings matched on real
   addresses (`"0.0.0.0/0"` = anything), and transit passing through is filtered
-  by the same rules. The router is the only filter; pods don't re-filter what a
-  router delivers to them.
+  by the same rules. The router is the only filter — there's no second, per-pod
+  rule set to keep in step.
 - **Chaining is transitive.** Two routers sharing a network route through each
   other, so joining a router gets you everything it routes, including onward
   routers — reachability exists only where a chain creates it. Source addresses
