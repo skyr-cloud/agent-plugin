@@ -15,4 +15,4 @@ Claude Code and Codex load.
 | Skill | Teaches |
 |-------|---------|
 | [`scl`](scl/SKILL.md) | Writing SCL/SCLE (syntax, types, modules, `Package.scle`, the resource model, a module's own `@test` cases), looking up module documentation, and verifying with `skyr fmt`/`skyr check`/`skyr test`. |
-| [`deploy`](deploy/SKILL.md) | How deployment to Skyr works: pushing to the `skyr` git remote, environments and the deployment lifecycle, exposing pods to the internet (ports, `InternetAddress`, DNS zones), private networking, sharing networks, volumes and addresses across repositories, first-party plugin capabilities, and checking rollout status and incidents. |
+| [`deploy`](deploy/SKILL.md) | How deployment to Skyr works: pushing to the `skyr` git remote, environments and the deployment lifecycle, exposing pods to the internet (ports, `InternetAddress`, DNS zones), private networking and routing between networks, sharing networks, volumes and addresses across repositories, first-party plugin capabilities, and checking rollout status and incidents. |

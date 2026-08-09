@@ -3,11 +3,11 @@ name: deploy
 description: >-
     How deployment to Skyr works: pushing to the skyr git remote, environments
     and the deployment lifecycle, exposing pods to the internet (ports,
-    InternetAddress, DNS zones), private networking, sharing networks, volumes
-    and addresses across repositories, first-party plugin capabilities, and
-    checking rollout status and incidents. Use when deploying to Skyr, wiring a
-    repository to a Skyr instance, exposing a service publicly, or debugging a
-    rollout.
+    InternetAddress, DNS zones), private networking and routing between
+    networks, sharing networks, volumes and addresses across repositories,
+    first-party plugin capabilities, and checking rollout status and incidents.
+    Use when deploying to Skyr, wiring a repository to a Skyr instance, exposing
+    a service publicly, connecting private networks, or debugging a rollout.
 ---
 
 # Deploying to Skyr
@@ -399,6 +399,88 @@ withdrawn; *changing* it goes through the grant. Attaching needs
 `resource:AttachPodToNetwork` on the network; publishing needs the separate
 `resource:AttachDnsRecordToNetwork`.
 
+### Routing between networks
+
+A `Network` on its own is a closed island. `Container.Router` connects several
+of them and routes between them, with an optional stateful ACL. There is no
+peering resource — a router is *a machine on each LAN*:
+
+```scl
+let corp = Container.Network({ name: "corp", cidr: "10.42.0.0/24" })
+let dmz = Container.Network({ name: "dmz", cidr: "10.43.0.0/24" })
+
+Container.Router({
+    name: "edge",
+    networks: #{ "corp": corp, "dmz": dmz },
+    defaultAction: .deny,
+    rules: [
+        { source: corp.cidr, destination: dmz.cidr, action: .allow },
+    ],
+})
+```
+
+- **Real addresses, no NAT.** Pods reach peer-network pods at their own inner
+  IPv4s and keep exactly the interfaces they declared. A deployed router draws
+  an ordinary address on each member network — reported in `addresses`, keyed by
+  the member labels, and answering `ping` and nothing else. A router's
+  `networks` keys are **labels**, not interface names: no interface, no DNS
+  meaning.
+- **Member CIDRs must be disjoint.** Overlapping members are an eval error; a
+  member whose address space is already routed in the closure it joins fails the
+  deploy, naming **the CIDR and your own member label** (never the foreign
+  network). Two deploys racing into an overlap resolve deterministically — the
+  earlier-established membership wins and the loser's space is routed nowhere.
+- **Any member count is valid**, zero and one included (a useful intermediate
+  state while a handle or grant is pending). Members **may live in different
+  regions**; a router takes no `region` input.
+- **ACL:** `rules` match top to bottom, **first match wins**, falling through to
+  `defaultAction` (`.allow` by default; omit both and everything routes).
+  **Stateful** — replies on established connections always pass, so rules govern
+  who may *initiate*. `source`/`destination` are CIDR strings matched on real
+  addresses (`"0.0.0.0/0"` = anything), and transit passing through is filtered
+  by the same rules. The router is the only filter; pods don't re-filter what a
+  router delivers to them.
+- **Chaining is transitive.** Two routers sharing a network route through each
+  other, so joining a router gets you everything it routes, including onward
+  routers — reachability exists only where a chain creates it. Source addresses
+  can't be forged across a router; there's nothing to configure.
+- **Updates are in place.** Changing `networks`, `rules` or `defaultAction`
+  reconverges the router on every node within seconds — surviving members keep
+  their addresses and no pod is recreated; only a new `name` is a new router.
+  The router is rebuilt as it reconverges, so expect a brief window where it
+  forwards nothing. That makes the ACL the router owner's prompt kill switch.
+- **DNS follows routability, not the ACL.** A pod also resolves
+  `<record>.<netname>.internal` on named networks it can *reach* — even through
+  a deny-all router (a name isn't traffic). Routed names are **qualified only**
+  (search domains stay the attached netnames), direct attachment shadows
+  routing, and two routed networks sharing a netname resolve to **NXDOMAIN**.
+  Give the networks of a shared fabric distinct names.
+- Membership needs `resource:AttachRouterToNetwork` on each member network,
+  checked on every transition of the router.
+
+**Cross-org: the DMZ pattern.** Never make your network a member of the other
+org's router. Org A declares a small transit network T and grants org B's
+deployment role `AttachRouterToNetwork` on T — the *only* cross-org grant. Each
+side then connects with a router it **owns** (A: its network + T; B: its network
++ T), and chaining carries traffic between them. Each side's ACL sits on its own
+router, so each keeps a kill switch that converges in seconds. Revoking the
+grant is lazy and *freezes* rather than evicts (the router's next transition
+fails; established routes stay), and a network owner who doesn't own the
+adjacent router has no lever short of deleting the network — which is exactly
+why each side brings its own router.
+
+**Under `skyr run`** routers are emulated: same reachability, same ACL, same DNS
+closure, and member networks are isolated from each other absent a router. Four
+local-only divergences, none of which a deployment produces: every local pod
+also shares the `skyr-run-default` network (so isolation is faithful for
+member-network addresses, not for the shared ones behind them); DNS records are
+injected at pod creation while routes converge live, so a running local pod can
+hold a route to a network whose names it can't yet resolve; a local router's
+address on a member network is that network's gateway (the reserved first host)
+rather than a pool address, which is what `addresses` reports locally; and those
+addresses answer more than `ping`, since they are the bridge gateways local name
+resolution and internet egress already go through.
+
 ## Sharing networks, volumes, and addresses across repos
 
 Networks, persistent volumes, and internet addresses are shareable across
@@ -424,21 +506,24 @@ IAM.Policy({
 })
 ```
 
-The four use verbs are `resource:AttachPodToNetwork`,
-`resource:AttachDnsRecordToNetwork`, `resource:MountVolume`, and
-`resource:BindInternetAddress`. Enforcement is **uniform** — your own
-environment's resources are checked too; it's invisible only because a repo's
-deployment role defaults to the org's `Super` role, which short-circuits within
-that org. A restricted role needs the grants for its own resources as well. A
-refusal names the verb and the object QID, plus the acting role when the
-deployment presented one.
+The five use verbs are `resource:AttachPodToNetwork`,
+`resource:AttachRouterToNetwork`, `resource:AttachDnsRecordToNetwork`,
+`resource:MountVolume`, and `resource:BindInternetAddress`. Enforcement is
+**uniform** — your own environment's resources are checked too; it's invisible
+only because a repo's deployment role defaults to the org's `Super` role, which
+short-circuits within that org. A restricted role needs the grants for its own
+resources as well. A refusal names the verb and the object QID, plus the acting
+role when the deployment presented one.
 
 Revocation is **lazy**: it bites on the holder's next transition, never
 detaching a running pod. There is no owner-initiated eviction, so a resource
 you share can be held by its current user until they release it — for a shared
 `InternetAddress` the owner's only forced remedy is delete + recreate, which
-changes the public IP. Dropping an attachment/mount/binding always succeeds,
-even after the grant is gone.
+changes the public IP; for a network someone else's router routes, the prompt
+lever belongs to whoever owns that router (its ACL), which is why cross-org
+connections are shaped so each side owns the router in front of its own
+network. Dropping an attachment/membership/mount/binding always succeeds, even
+after the grant is gone.
 
 ## Restart, jobs, and scheduled runs
 
@@ -815,6 +900,7 @@ curl -s https://skyr.foo/llms.txt                    # index of all doc pages
 curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, ownership in depth
 curl -s https://skyr.foo/~docs/resources.md          # what every resource does: transitions, drift, reads
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
+curl -s https://skyr.foo/~docs/networking.md         # private networks, routers, ACLs, internal DNS, the DMZ pattern
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
 curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI, consumption, IAM
 curl -s https://skyr.foo/~docs/knobs.md              # knobs: the four types, awaiting-input gating, skyr knobs CLI
