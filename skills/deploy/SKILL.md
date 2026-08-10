@@ -187,7 +187,8 @@ all, and a line that isn't a valid pattern fails the build naming it.
 Every pod gets a **public, internet-routable IPv6** (`pod.address`). By
 default it is inert for ingress: the pod's firewall only accepts connections
 from internal networks the pod is attached to, and the IPv6 serves egress.
-Opening a port changes that:
+Until the backend has allocated it, `pod.address` reads as pending, so
+resources built from it defer. Opening a port changes that:
 
 ```scl
 let http = pod.Port({ port: 8080, public: true })
@@ -217,6 +218,7 @@ let pod = Container.Pod({
 ```
 
 `ip.address` is a public IPv4 that survives pod replacement and redeploys.
+Like `pod.address` it reads as pending until the allocation lands.
 An address routes to **exactly one pod at a time, anywhere in Skyr** — two
 pods in one program naming it is an eval-time error, and a pod elsewhere
 trying to take an address another pod already holds fails the deploy, naming
