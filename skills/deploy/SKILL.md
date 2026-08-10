@@ -704,6 +704,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`PKI.*`** — `ED25519PrivateKey`/`ECDSAPrivateKey`/`RSAPrivateKey`,
   `CertificationRequest`, `CertificateSignature`: build self-managed
   certificate chains (CAs, client certs, internal TLS) entirely in-config.
+  An `RSAPrivateKey` `size` outside 2048–16384 bits raises
+  `PKI.InvalidPKIInput` at evaluation time, so `skyr check` catches it.
 - **`PKI/ACME.*`** — publicly-trusted TLS certificates over ACME (RFC 8555, the
   Let's Encrypt protocol). An `Account` yields `DNS01Certificate` (composes with
   `Skyr/DNS`, does wildcards) and `HTTP01Certificate` (you serve the token)
