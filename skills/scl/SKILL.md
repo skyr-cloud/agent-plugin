@@ -100,6 +100,13 @@ user?.name ?? "anonymous"       // optional chaining; result is Str
 There is no null-pointer error path: the type system forces you through
 `?.`, `??`, or `Std/Option` (`Option.unwrap` raises `Option.UnexpectedNil`).
 
+**`T?` is an optional type, never an omittable argument.** Call arity is exact:
+every parameter takes an argument, and an optional one takes `nil` to mean
+"nothing" (`Option.map(nil, f)`). The case worth remembering is a constructor
+whose only parameter is a record with no required fields — the record is still
+written, as `{}`: `Rollout.Rollback({})` compiles and `Rollout.Rollback()` does
+not. Record *fields* are the omittable thing; arguments are not.
+
 ## Atoms and enums
 
 An **atom** `.name` is a first-class symbolic value (bare-identifier label,
@@ -479,6 +486,18 @@ Rules that matter in practice:
   time via `Std/Env`: `Env.environment.name`, `Env.repository.name`, etc.
   Each read answers for the package it is written in — foreign-package code
   reports the foreign repo's own deployment, not the evaluating one.
+- **A few resources are commands: declaring one is the request, and there is
+  nothing to read back.** `Skyr/Rollout.Rollback({ reason: "…" })` asks the
+  platform to roll this deployment back. Whether to do it is ordinary control
+  flow — write `if (c) Rollout.Rollback({ reason: "…" }) else nil` and the
+  request exists only on the deployments whose evaluation reaches it. Its
+  identity is *this deployment plus the reason*, so the same reason twice is one
+  request and a reconcile retry keeps asking for the same one, while the same
+  reason in a later deployment is a new request. Rolling back needs an explicit
+  `environment:Rollback` grant on the repository's deployment role, and a
+  deployment with no rollback target tears its environment down instead of
+  restoring anything — read the `deploy` skill's rollback section before wiring
+  one up.
 
 **Do not guess plugin-module signatures.** Plugin modules (`Skyr/Container`,
 `Skyr/DNS`, `Skyr/IAM`, `Skyr/PKI`, `Skyr/HTTP`, `Skyr/Rollout`,

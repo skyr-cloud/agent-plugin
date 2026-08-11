@@ -2,12 +2,13 @@
 name: deploy
 description: >-
     How deployment to Skyr works: pushing to the skyr git remote, environments
-    and the deployment lifecycle, exposing pods to the internet (ports,
-    InternetAddress, DNS zones), private networking and routing between
-    networks, sharing networks, volumes and addresses across repositories,
-    first-party plugin capabilities, and checking rollout status and incidents.
-    Use when deploying to Skyr, wiring a repository to a Skyr instance, exposing
-    a service publicly, connecting private networks, or debugging a rollout.
+    and the deployment lifecycle, rolling a deployment back, exposing pods to
+    the internet (ports, InternetAddress, DNS zones), private networking and
+    routing between networks, sharing networks, volumes and addresses across
+    repositories, first-party plugin capabilities, and checking rollout status
+    and incidents. Use when deploying to Skyr, wiring a repository to a Skyr
+    instance, exposing a service publicly, connecting private networks, rolling
+    back a bad deployment, or debugging a rollout.
 ---
 
 # Deploying to Skyr
@@ -46,6 +47,11 @@ deploys to a different Skyr instance, substitute that instance's host.
 - Deleting a ref tears the environment down:
   `git push skyr --delete feature-x` destroys everything that environment
   owns, in dependency order.
+- **Rolling back is a first-class operation**, not a git manoeuvre: every
+  deployment records which one preceded it, and `skyr deployments rollback <env>`
+  redeploys that predecessor's commit as a *new* deployment. A deployment with
+  no recorded predecessor is inert, and rolling *it* back tears the environment
+  down — see the rollback section below before running it.
 - Deleting a whole **repository, organization, or account** goes further than a
   ref: `skyr repo delete`, `skyr org delete <org>`, and
   `skyr auth delete-account` tear down every environment involved, then
@@ -131,6 +137,89 @@ normal operation, not a stuck rollout:
 
 A deployment of only stable resources (keys, random values, artifacts,
 images) settles into Up.
+
+## Rolling back
+
+Every deployment Skyr promotes records its **rollback target**: the deployment
+that was current immediately before it. A rollback redeploys that target's
+commit as a **fresh deployment** — no old deployment is revived — through the
+same compile → test → evaluate → converge path as any push.
+
+```sh
+skyr deployments rollback main
+skyr deployments rollback main --reason "checkout error rate spiked after 3f2a1c"
+skyr deployments rollback main --reason-file ./why.txt   # `-` reads stdin
+```
+
+- **It is ordinary safe supersession.** The deployment being rolled back goes
+  Lingering and **keeps serving** until the rollback deployment bootstraps. If
+  the restored commit no longer compiles or its tests now fail, nothing is torn
+  down and the serving deployment carries on. Pushing again recovers.
+- **Rollbacks compose.** A rollback result takes its *commit* from the target but
+  inherits the target's *own* target, so repeated rollbacks walk back one
+  deployment at a time. Deployed `A -> B -> C`: rolling back `C` gives `B'`
+  (whose target is `A`), rolling back `B'` gives `A'` (no target).
+- **A deployment with no target tears the environment down — the one dangerous
+  outcome here.** It does not fail and does not no-op: it destroys every resource
+  in the environment, exactly as `git push skyr --delete` would. Three kinds of
+  deployment have no target: an
+  environment's first one, a rollback result that restored such a first one, and
+  **any deployment created before the instance recorded rollback lineage** (it is
+  never backfilled, so one ordinary push is what gives such an environment a
+  target again). Check before acting: `skyr deployments list` prints
+  `none (teardown)` in `RESTORES` for an inert deployment. The CLI prints the
+  consequence and then makes you type the environment's QID for that outcome
+  (`--yes` states the intent up front, and is **required** with no terminal to
+  prompt on — a piped stdin, or one already spent on `--reason-file -`). The
+  restoring outcome is deliberately ungated. The git ref survives a teardown, so
+  pushing re-creates the environment.
+- **The request binds to one deployment.** The command takes an environment but
+  resolves its current deployment and submits that exact one, so a push landing
+  in between makes the rollback **refuse** and name what is current now. Retries
+  are safe: the plan is recorded durably before anything happens, so a repeat, a
+  crash, or a racing request all resolve to that same rollback.
+- **Reasons** are kept verbatim as permanent provenance, newlines included: at
+  least one non-whitespace character, at most 512 characters. `--reason` and
+  `--reason-file` conflict. Omitted, the recorded default names the asker —
+  `Manual rollback` for a person, `Rollback condition reached` for
+  `Rollout.Rollback`.
+- **Permission** is `environment:Rollback` on the environment, covering both
+  outcomes, teardown included. It implies neither push nor delete authority and
+  is never anonymous. A rollback from config runs on the *deployment role*, which
+  must be granted the verb explicitly.
+- **History** answers all of it and `skyr deployments list` prints it: `RESTORES`
+  (target, or `none (teardown)`), `ROLLED BACK` (`-> <id>` or `torn down`),
+  `ROLLBACK OF` (this row is itself a rollback result), plus each reason verbatim
+  beneath the table. Two reading rules: `RESTORES` is **lineage, not an offer** —
+  it is filled in for Lingering and Down rows too, and only the *current*
+  deployment can actually be rolled back; and a successor id is reserved before
+  its row exists, so a reference to it can briefly resolve to nothing and is
+  expected to appear on the next poll.
+
+**From the config itself.** `Rollout.Rollback` is the same operation as a
+resource, so a deployment can roll *itself* back:
+
+```scl
+import Skyr/Rollout
+
+// Whatever your code decides from — a knob, a probe output, a version.
+if (degraded)
+    Rollout.Rollback({ reason: "Health check remained degraded" })
+else
+    nil
+```
+
+Declaring it **is** the request; there is nothing to read off it, and whether to
+roll back is ordinary control flow rather than an input. The record is required
+even when empty — `Rollout.Rollback({})`; `Rollout.Rollback()` does not compile,
+since SCL has no omittable arguments. Identity is *this deployment plus the
+reason* and nothing else, so: the same reason twice in one deployment is one
+request; two different reasons are two requests that the platform serializes to
+one recorded rollback; a reconcile retry asks for the same one; and the same
+reason in a *later* deployment is a new request — a condition still true after
+the rollback rolls back again, one step further. Every attempted reason lands in
+the deployment log even when it loses the race or is refused. The deployment role
+needs `environment:Rollback`, granted in the repository's own `IAM.Policy`.
 
 ## From a pod to a public domain
 
@@ -778,6 +867,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   reconciles on change rather than on a timer, so a roll advances one step per
   save locally and retired replicas come down on restart or ctrl+C; a real
   deployment paces itself.
+- **`Rollout.Rollback({ reason? })`** — declaring it asks the platform to roll
+  this deployment back; see the rollback section above for the identity rules,
+  the required `environment:Rollback` grant, and the inert-deployment hazard.
+  Note the braces: `Rollback({})` is the no-reason form and `Rollback()` does not
+  compile.
 - **`Resource.Definition<T>("Name")`** — define your *own* resource type
   whose backend is SCL. One repo declares a typed definition and exports its
   `.Resource` constructor; other repos in the **same org** import the module
@@ -810,7 +904,7 @@ reference — look them up rather than guessing (see below).
 ## Watching a rollout
 
 ```sh
-skyr deployments list             # states of this repo's deployments
+skyr deployments list             # states + rollback provenance of this repo's deployments
 skyr deployments logs --follow    # stream deployment progress in real time
 skyr resources list               # resources in the current env
 skyr resources list --env staging
