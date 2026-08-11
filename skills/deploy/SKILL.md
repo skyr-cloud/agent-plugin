@@ -749,6 +749,15 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `skyr run` (and `skyr check`/the REPL) paths carry no content identifier,
   so a path-backed tier never advances locally — that only happens on a
   real deployment.
+- **`Rollout.Replica({ name, rev, generation })`** — a marker for one
+  materialized revision. It has no outputs, never drifts, and does nothing
+  to the world; what it carries is its own existence. Declare it gated on
+  the resources that make up one replica (`with (pod) Rollout.Replica(…)`)
+  and it comes into being exactly when they do, so "is this revision
+  standing?" is answered by whether this one resource exists rather than by
+  inspecting everything it stands for. `rev` and `generation` are opaque
+  strings recorded on the row; nothing interprets them. A replica is never
+  changed in place — a different revision is a different `name`.
 - **`Resource.Definition<T>("Name")`** — define your *own* resource type
   whose backend is SCL. One repo declares a typed definition and exports its
   `.Resource` constructor; other repos in the **same org** import the module
