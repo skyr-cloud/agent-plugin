@@ -774,7 +774,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   it is made of has materialized; the set is volatile (deployment stays
   `Desired`) until it settles. Everything a replica builds is a sub-resource
   of the set. `name` is the whole identity — renaming rebuilds from scratch,
-  while `count: 0` keeps the set and holds nothing.
+  while `count: 0` keeps the set and holds nothing. Under `skyr run` the loop
+  reconciles on change rather than on a timer, so a roll advances one step per
+  save locally and retired replicas come down on restart or ctrl+C; a real
+  deployment paces itself.
 - **`Resource.Definition<T>("Name")`** — define your *own* resource type
   whose backend is SCL. One repo declares a typed definition and exports its
   `.Resource` constructor; other repos in the **same org** import the module
