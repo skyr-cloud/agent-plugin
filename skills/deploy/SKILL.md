@@ -221,6 +221,13 @@ the rollback rolls back again, one step further. Every attempted reason lands in
 the deployment log even when it loses the race or is refused. The deployment role
 needs `environment:Rollback`, granted in the repository's own `IAM.Policy`.
 
+**This is the surface with no interlock**, unlike the CLI and the web dialog: it
+asks nobody and runs on a reconciliation pass, so if the declaring deployment has
+no rollback target the declaration tears the environment down unattended. Check
+the environment's `RESTORES` before wiring one up, and note that each rollback
+leaves a deployment whose own target is one step further back — a condition still
+true afterwards walks the lineage down to the inert one.
+
 ## From a pod to a public domain
 
 The complete path from "a container runs" to "https://example.com serves
