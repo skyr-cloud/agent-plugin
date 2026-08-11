@@ -749,6 +749,32 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `skyr run` (and `skyr check`/the REPL) paths carry no content identifier,
   so a path-backed tier never advances locally — that only happens on a
   real deployment.
+- **`Rollout.ReplicaSet({ name, count, replica, maxSurge?, maxUnavailable? })`**
+  — `count` copies of one function, rolled a few at a time. `replica` is
+  called once per replica with `{ rev: Str }` and whatever it returns is
+  collected into `.replicas`; name what it builds after `rev` so two
+  revisions can be alive at once. Replicas are **cattle**: each is built at
+  one *generation* and destroyed at it, never updated in place, so there is
+  no stable per-replica identity (no volume that survives a roll).
+  A generation is the replica function's identity — its code *plus
+  everything it reads* — so a changed image URL or secret version rolls the
+  set with the source untouched, and a set whose function reads a resource
+  that has not materialized simply holds until it has.
+  `maxSurge` (default `1`) is how far above `count` the set may go;
+  `maxUnavailable` (default `0`) is how far below it may fall; both zero is
+  refused. Two things worth stating outright: **retirement is paced by
+  `maxUnavailable` alone** — at most `max(1, maxUnavailable)` teardowns in
+  flight, waiting for each to finish, however much surge headroom there is,
+  so `maxSurge: count` builds a whole generation at once and still retires
+  one at a time; and **`maxSurge` bounds what the set asks for, not what is
+  standing**, so teardown lag can briefly leave more than `count + maxSurge`
+  replicas up — leave room for it in anything counted. Mid-roll `.replicas`
+  deliberately holds both generations, so a DNS record or member list over
+  the whole set stays complete. A replica counts as up only once everything
+  it is made of has materialized; the set is volatile (deployment stays
+  `Desired`) until it settles. Everything a replica builds is a sub-resource
+  of the set. `name` is the whole identity — renaming rebuilds from scratch,
+  while `count: 0` keeps the set and holds nothing.
 - **`Resource.Definition<T>("Name")`** — define your *own* resource type
   whose backend is SCL. One repo declares a typed definition and exports its
   `.Resource` constructor; other repos in the **same org** import the module
