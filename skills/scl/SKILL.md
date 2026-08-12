@@ -68,8 +68,12 @@ let lookup = #{ "key": "value" }           // #{ Str: Str } — dict, computed k
   A dict holds each key once — writing a key the literal already holds
   replaces its value **in the first write's position**, so `#{"a": 1, "b": 2,
   "a": 3}` is `#{"a": 3, "b": 2}`, size 2. Two plain entries with the same
-  constant key are a warning (the first can never be observed); a collision
-  between generated entries is not (see "Dict entries" below).
+  constant key are a warning: the first entry's *value* can never be observed,
+  only the position it fixes for the key. The warning points at the later
+  entry, so collapse the pair by moving its value into the **first** entry —
+  deleting the first instead reorders the keys, and dict equality is
+  order-sensitive. A collision between *generated* entries is not a warning
+  (see "Dict entries" below).
 - **Paths** are literals: `./src`, `../shared`, `/abs/from/repo/root`.
   Relative paths resolve against the current module's directory. Quote odd
   segments: `./dir/"file with spaces.txt"`.
