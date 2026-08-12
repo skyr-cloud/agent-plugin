@@ -65,6 +65,11 @@ let lookup = #{ "key": "value" }           // #{ Str: Str } — dict, computed k
   shorthand works: `{ name, port }` ≡ `{ name: name, port: port }`.
 - **Dicts** `#{ key: value }` have computed keys of one type: in
   `#{ key: 42 }` the key is the *value of the variable* `key`, not `"key"`.
+  A dict holds each key once — writing a key the literal already holds
+  replaces its value **in the first write's position**, so `#{"a": 1, "b": 2,
+  "a": 3}` is `#{"a": 3, "b": 2}`, size 2. Two plain entries with the same
+  constant key are a warning (the first can never be observed); a collision
+  between generated entries is not (see "Dict entries" below).
 - **Paths** are literals: `./src`, `../shared`, `/abs/from/repo/root`.
   Relative paths resolve against the current module's directory. Quote odd
   segments: `./dir/"file with spaces.txt"`.
@@ -220,10 +225,11 @@ let doubled = List.map([1, 2, 3], fn(x) x * 2)
 let identity = fn<T>(x: T) x
 let getName = fn<T <: { name: Str }>(item: T) item.name
 
-// List comprehensions: for iterates, if filters; clauses chain and the
-// generated values splice in flat (see "List elements" below)
+// Comprehensions: for iterates, if filters; clauses chain and the generated
+// values splice in flat (see "List elements" and "Dict entries" below)
 let evens = [for (x in items) if (x / 2 * 2 == x) x]
 let pairs = [for (x in xs) for (y in ys) x + y]
+let byName = #{for (x in items) "k{x}": x}  // same forms, whole entries
 
 // Exceptions
 let ParseError = exception(Str)             // payload optional: `exception` alone
@@ -307,6 +313,38 @@ always one flat list; comprehension elements never introduce nesting.
   `[if (extra) for (x in xs) x]` splices `xs` conditionally.
 - Each generated value's type joins into the list's element type exactly like
   a plain element's does.
+
+### Dict entries: the same forms, wrapped around `key: value`
+
+A `#{…}` literal takes the same two item forms, around a whole entry rather
+than a value. They chain and nest the same way, and everything a chain writes
+lands in the enclosing dict — never a dict of dicts.
+
+```scl
+#{
+    "first": 123,                // plain entry — exactly one key
+    if (false) "second": 345,    // writes nothing (no nil-valued key)
+    for (n in [1, 2, 3])         // chained clauses combine:
+        if (n > 1)               //   drops 1
+            "v{n}": n,           // writes v2 and v3
+}
+// = #{ "first": 123, "v2": 2, "v3": 3 }
+```
+
+- The binder is in scope for the **key and the value alike**, so a generated
+  key is usually built from it: `#{for (p in ports) "port-{p}": p}`.
+- **Last write wins, in the first write's position.** A generated key landing
+  on one the dict already holds replaces that value in place — no duplicate
+  key, no error, and `Dict.keys` order unchanged:
+  `#{"v1": 0, for (n in [1, 1, 2]) "v{n}": n * 10}` is `#{"v1": 10, "v2": 20}`.
+  Only a *hand-written* repeat of a constant key warns.
+- Neither form adds optionality: `#{if (c) "k": 1}` is `#{Str: Int}` with zero
+  or one entry, and a generator over an empty list still fixes both types.
+- An `else` makes the `if` an ordinary expression, which in item position is
+  the entry's **key**: `#{if (c) "a" else "b": 1}` always writes one entry.
+- `for (x in e)` iterates a list only, exactly as in a list literal. To drive
+  one from a dict, bridge through `Std/Dict.entries` (or reach for
+  `Dict.map`/`Dict.filter`, which transform a dict directly).
 
 ## Modules and imports
 
