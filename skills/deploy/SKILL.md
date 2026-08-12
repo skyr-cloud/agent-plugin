@@ -481,8 +481,10 @@ net.dns.ARecord({
 ```
 
 `networks` is keyed by interface name (not `eth0`/`lo`). Each pod gets an
-inner IPv4 per attachment in `networkAddresses`, keyed the same way. Attached
-pods can also open non-`public` ports to accept internal-only traffic.
+inner IPv4 per attachment in `networkAddresses`, keyed the same way; every
+interface you attached is present, reading as pending until its address is
+allocated, so the record above defers instead of publishing an empty one.
+Attached pods can also open non-`public` ports to accept internal-only traffic.
 Internal DNS records require the network to have a `name` and resolve as
 `<record>.<netname>.internal` (`"@"` for the network apex). A pod may not
 attach two networks that share a `name` — the lookup would be ambiguous, so
