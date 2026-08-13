@@ -146,7 +146,9 @@ let mode: Mode = .prod              // .prod alone has type enum { .prod }
   to `enum { .prod }` in the `then`, and *subtracts* the variant in the `else`,
   so an `if`/`else if` chain gets progressively tighter (exhausting the set
   leaves `Never`). For `m: Mode?`, a positive match also drops the `nil`.
-  Comparing two enum *variables* checks but narrows nothing.
+  Comparing two enum *variables* checks but narrows nothing. The same
+  narrowing (nil checks included) fires in a collection element's `if` guard
+  (below).
 - **String boundary**: a *bare* atom's interpolation and `Encoding.toJson` drop
   the dot (`.prod` → `"prod"`); `fromJson` never yields an atom. Like `Path`,
   atom-ness does not survive leaving the system. A *tagged* atom has no plain
@@ -323,6 +325,10 @@ always one flat list; comprehension elements never introduce nesting.
   `if` expression**: `[if (c) n]` is `[Int]` with zero or one elements — no
   `nil` enters the list. With an `else` it parses as an ordinary expression
   element again, contributing exactly one value: `[if (c) a else b]`.
+- **The guard narrows like an `if`'s then-branch**: the condition is assumed
+  true inside the guarded element, so `[if (x != nil) x]` is `[Int]` for
+  `x: Int?`. No `else` means no negation side, and the fact is scoped to the
+  guarded element — siblings and code after the literal still see `Int?`.
 - An `if` can guard any element, including a whole `for` chain — so
   `[if (extra) for (x in xs) x]` splices `xs` conditionally.
 - Each generated value's type joins into the list's element type exactly like
@@ -368,6 +374,9 @@ lands in the enclosing dict — never a dict of dicts.
 - Neither `for` nor `if` adds optionality: `#{if (c) "k": 1}` is `#{Str: Int}`
   with zero or one entry, and a generator over an empty list still fixes both
   types.
+- The guard narrows exactly as in a list, with the fact in scope for the key
+  and the value alike: `#{if (x != nil) "p{x}": x}` is `#{Str: Int}` for
+  `x: Int?`.
 - An `else` makes the `if` an ordinary expression, which in item position is
   the entry's **key**: `#{if (c) "a" else "b": 1}` always writes one entry.
 - `for (x in e)` iterates a list only, exactly as in a list literal. To drive
