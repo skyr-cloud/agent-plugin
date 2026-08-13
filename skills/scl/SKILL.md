@@ -72,8 +72,8 @@ let lookup = #{ "key": "value" }           // #{ Str: Str } — dict, computed k
   only the position it fixes for the key. The warning points at the later
   entry, so collapse the pair by moving its value into the **first** entry —
   deleting the first instead reorders the keys, and dict equality is
-  order-sensitive. A collision between *generated* entries is not a warning
-  (see "Dict entries" below).
+  order-sensitive. A collision between *generated* or *spliced* entries is not
+  a warning (see "Dict entries" below).
 - **Paths** are literals: `./src`, `../shared`, `/abs/from/repo/root`.
   Relative paths resolve against the current module's directory. Quote odd
   segments: `./dir/"file with spaces.txt"`.
@@ -229,11 +229,14 @@ let doubled = List.map([1, 2, 3], fn(x) x * 2)
 let identity = fn<T>(x: T) x
 let getName = fn<T <: { name: Str }>(item: T) item.name
 
-// Comprehensions: for iterates, if filters; clauses chain and the generated
-// values splice in flat (see "List elements" and "Dict entries" below)
+// Comprehensions: for iterates, if filters, in spreads a whole collection;
+// clauses chain and everything splices in flat (see "List elements" and
+// "Dict entries" below)
 let evens = [for (x in items) if (x / 2 * 2 == x) x]
 let pairs = [for (x in xs) for (y in ys) x + y]
 let byName = #{for (x in items) "k{x}": x}  // same forms, whole entries
+let flat = [for (xs in xss) in xs]          // spread under a for: flatten
+let merged = #{in defaults, "region": "eu"} // splice a dict; later writes win
 
 // Exceptions
 let ParseError = exception(Str)             // payload optional: `exception` alone
@@ -280,13 +283,14 @@ flow — same gating, no condition to invent, and the type is simply the body's
 parens required around the subject, and the trailing body extends rightward, so
 `with (a) A(); B()` gates `B()` too.
 
-### List elements: `for` and `if` generate, results splice in flat
+### List elements: `for` and `if` generate, `in` spreads, all splice in flat
 
-Inside a `[…]` literal, `for` and `if` are *element forms*, not expressions.
-A plain expression element contributes exactly one value; a `for`/`if` element
-*generates* zero or more. The body of a `for`/`if` element is itself an
-element, so the forms chain arbitrarily — and everything a chain generates is
-spliced into the surrounding list at that position, in order. The result is
+Inside a `[…]` literal, `for`, `if`, and `in` are *element forms*, not
+expressions. A plain expression element contributes exactly one value; a
+`for`/`if` element *generates* zero or more; a spread `in xs` splices every
+element of `xs` in at its position. The body of a `for`/`if` element is itself
+an element, so the forms chain arbitrarily — and everything a chain generates
+is spliced into the surrounding list at that position, in order. The result is
 always one flat list; comprehension elements never introduce nesting.
 
 ```scl
@@ -304,9 +308,15 @@ always one flat list; comprehension elements never introduce nesting.
 
 - **A `for` under a `for` is a cross product**: the innermost expression runs
   once per surviving combination of the binders in scope, each run
-  contributing one element. Flattening a nested list is exactly this:
-  `[for (inner in nested) for (x in inner) x]`. To *keep* nesting, make the
-  body a list literal of its own: `[for (x in xs) [x]]` is `[[Int]]`.
+  contributing one element. To *keep* nesting, make the body a list literal
+  of its own: `[for (x in xs) [x]]` is `[[Int]]`.
+- **`in xs` splices a whole list** — the `for` item with the binder dropped:
+  `[in xs]` copies, `[1, in xs, 4]` concatenates in place,
+  `[for (inner in nested) in inner]` flattens one level, and
+  `[if (extra) in extras]` includes a block conditionally. The operand must
+  itself be a list; its element type joins like any element's. Spreading is
+  always the keyword `in` — there is no `...`/`..` symbol (`..` is a path
+  literal, so `[..]` is a one-element list holding a path).
 - `for (x in e)` iterates a list only (`e: [T]`); any other iterable type is
   a compile error.
 - **The element `if` takes no `else` and is not the optional-typed else-less
@@ -318,10 +328,11 @@ always one flat list; comprehension elements never introduce nesting.
 - Each generated value's type joins into the list's element type exactly like
   a plain element's does.
 
-### Dict entries: the same forms, wrapped around `key: value`
+### Dict entries: the same forms, writing whole `key: value` entries
 
-A `#{…}` literal takes the same two item forms, around a whole entry rather
-than a value. They chain and nest the same way, and everything a chain writes
+A `#{…}` literal takes the same item forms — `for` and `if` around a whole
+entry rather than a value, and the spread `in d` moving whole entries by
+itself. They chain and nest the same way, and everything a chain writes
 lands in the enclosing dict — never a dict of dicts.
 
 ```scl
@@ -342,8 +353,21 @@ lands in the enclosing dict — never a dict of dicts.
   key, no error, and `Dict.keys` order unchanged:
   `#{"v1": 0, for (n in [1, 1, 2]) "v{n}": n * 10}` is `#{"v1": 10, "v2": 20}`.
   Only a *hand-written* repeat of a constant key warns.
-- Neither form adds optionality: `#{if (c) "k": 1}` is `#{Str: Int}` with zero
-  or one entry, and a generator over an empty list still fixes both types.
+- **`in d` splices a whole dict**: the operand's entries land at that
+  position, in order, indistinguishable from hand-written ones —
+  last-write-wins applies across written and spliced keys alike, first write
+  fixing the position, and never warns. `#{in defaults, "b": 3}` overrides
+  `defaults`' `"b"` in place; `#{in a, in b}` is exactly `Dict.merge(a, b)`;
+  `#{if (c) in overrides}` splices conditionally. The operand must be a dict;
+  its key and value types join like an entry's.
+- **A dict's shape is its key set; values decide nothing about it.** A
+  pending entry *value* (an unmaterialized resource output, say) stays in its
+  slot: `Dict.size`/`Dict.keys` and sibling entries answer while that entry
+  alone defers. Only what decides the keys makes the whole literal pending —
+  a pending key, `if` condition, `for` iterable, or spread operand.
+- Neither `for` nor `if` adds optionality: `#{if (c) "k": 1}` is `#{Str: Int}`
+  with zero or one entry, and a generator over an empty list still fixes both
+  types.
 - An `else` makes the `if` an ordinary expression, which in item position is
   the entry's **key**: `#{if (c) "a" else "b": 1}` always writes one entry.
 - `for (x in e)` iterates a list only, exactly as in a list literal. To drive
