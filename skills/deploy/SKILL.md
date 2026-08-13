@@ -109,7 +109,16 @@ A deployment moves through five states:
 - **Up** — converged *and* every resource is non-volatile; Skyr stops
   re-evaluating until the next push.
 - **Lingering** — superseded by a newer push; waits while the new deployment
-  rolls out and adopts shared resources.
+  rolls out and adopts shared resources. It keeps serving until the successor
+  converges, and *not converged* includes a resource the successor cannot yet
+  **declare** — one whose inputs are still pending — not just one it is still
+  creating. Being unable to state a resource is not the same as no longer
+  wanting it, so the predecessor keeps it alive rather than the successor
+  converging around the gap. The deployment log names each such resource
+  (`Waiting to declare <resource>: one of its inputs is still pending`, once per
+  stuck declaration, and only on a pass with nothing else in flight — while
+  resources are being created, a declaration waiting its turn is ordinary
+  ordering).
 - **Undesired** — teardown: resources not adopted by the successor are
   destroyed in dependency order.
 - **Down** — nothing left; terminal.
@@ -776,7 +785,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   (they show as not-yet-created, no incident) until someone supplies a value —
   "awaiting input" is a first-class state, not a stuck rollout, and the
   deployment log names each open gate (`Waiting for user input: knob <name> —
-  <description>`, once per gate, re-announced if the knob is later cleared).
+  <description>`, once per gate, re-announced if the knob is later cleared),
+  alongside a `Waiting to declare <resource>` line for each dependent the gate
+  is holding back.
   Turn a knob with
   `skyr knobs set <name> <value>` (plain argv — knobs are non-secret; env from
   ambient context or `--environment`) or the web env **Knobs** tab (`~k`);
