@@ -289,6 +289,29 @@ directly as `image` values. `containers` is a **name-keyed map**
 both are hard limits. Containers in the same pod share a network namespace, so
 siblings reach each other on `localhost`.
 
+**Running something other than the image's default.** A container starts its
+image's own `ENTRYPOINT`/`CMD` unless it says otherwise. The optional
+`execute` field replaces exactly one of those two halves — `.arguments([…])`
+keeps the entrypoint and replaces the `CMD` (the flag-passing case),
+`.command([…])` replaces the entrypoint and drops the `CMD` (the whole command
+line — one image serving both a service and a migration). Nothing parses a
+shell, so a pipeline is `.command(["/bin/sh", "-c", "a | b"])`, and an empty
+argv is rejected. `workingDirectory: Str?` replaces the image's `WORKDIR`; a
+tenant container's rootfs is **read-only**, so the directory must exist in the
+image or be one of its mount paths. Both are part of the pod's identity, so
+changing either recreates the pod.
+
+```scl
+containers: #{ "migrate": {
+    image: image.url,        // the same image the service runs
+    cpu: 500,
+    memory: 268435456,
+    execute: .command(["/app/bin/migrate", "--yes"]),
+    workingDirectory: "/app",
+    restart: .onFailure,
+} }
+```
+
 **Narrowing the build context.** Everything under `context` goes to the
 builder, so a `COPY . .` bakes in whatever is lying around — `node_modules`, a
 stray `.env`, a local build directory. The optional `ignorefile` input excludes
