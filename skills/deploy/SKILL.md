@@ -120,7 +120,7 @@ A deployment moves through five states:
   resources are being created, a declaration waiting its turn is ordinary
   ordering). A resource whose *name* is itself derived from another resource's
   output holds the rollout the same way, and is named by type while it waits
-  (`Waiting to declare a <type> resource: its own name is still pending`).
+  (`Waiting to declare a <type> resource: its own identity is still pending`).
 - **Undesired** — teardown: resources not adopted by the successor are
   destroyed in dependency order.
 - **Down** — nothing left; terminal.
