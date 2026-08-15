@@ -916,11 +916,18 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `"<org>/<repo>::*:Skyr/IAM.ServiceAccount:*!pem"`. Sign in with
   `skyr auth signin --username '<qid>' --key <pkcs8-or-openssh-key>`; over git
   the QID is the SSH username **percent-encoded** — once in the scp-style
-  remote, twice in an `ssh://` one, since git URL-decodes that form before
-  parsing it — so take the URL the repository page prints instead of
-  assembling one. Sessions get no refresh token (re-signing in is the
-  refresh), and credential management, the assistant, notifications and
-  org creation refuse an account outright. Rotation = destroy + re-declare;
+  remote (`<encoded-qid>@host:org/repo`), twice in an `ssh://` one, since git
+  URL-decodes that form before parsing it. Build the remote from that rule, or
+  read `Repository.sshUrl` **while signed in as the account**
+  (`skyr api query '{ organization(name: "<org>") { repository(name: "<repo>")
+  { sshUrl } } }'`); never copy the clone URL a browser shows, which is
+  composed for whoever is signed in there — an account has no browser sign-in,
+  so that URL carries a human's username. Sessions get no refresh token
+  (re-signing in is the refresh), and credential management, the assistant,
+  notifications, org creation and the about-yourself surfaces (profile, and the
+  membership listing behind `skyr org list`) refuse an account outright —
+  everything an org owns is decided by policy as usual. Rotation = destroy +
+  re-declare;
   removal = delete the declaration and deploy, which unregisters it
   (`skyr resources delete` is refused — only the declaring deployment may —
   and there is no membership mutation for it).
