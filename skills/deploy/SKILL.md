@@ -125,8 +125,10 @@ A deployment moves through five states:
   deployment is doing can resolve it — and says so at warning severity whatever
   else is going on (`Stuck declaring <resource>: … and nothing in flight can
   resolve it`), followed once by what the hold costs: while it lasts, resources
-  removed from the program are kept rather than destroyed. Changing the program
-  and pushing is the way out.
+  removed from the program are kept rather than destroyed. It is also reported:
+  the pass opens a `CannotProgress` incident naming the declaration, so a stalled
+  deployment reads Degraded rather than green. Changing the program and pushing
+  is the way out; the incident clears when the declaration lands.
 - **Undesired** — teardown: resources not adopted by the successor are
   destroyed in dependency order.
 - **Down** — nothing left; terminal.
