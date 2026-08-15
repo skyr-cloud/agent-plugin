@@ -296,10 +296,12 @@ keeps the entrypoint and replaces the `CMD` (the flag-passing case),
 `.command([…])` replaces the entrypoint and drops the `CMD` (the whole command
 line — one image serving both a service and a migration). Nothing parses a
 shell, so a pipeline is `.command(["/bin/sh", "-c", "a | b"])`, and an empty
-argv is rejected. `workingDirectory: Str?` replaces the image's `WORKDIR`; a
-tenant container's rootfs is **read-only**, so the directory must exist in the
-image or be one of its mount paths. Both are part of the pod's identity, so
-changing either recreates the pod.
+argv is rejected. An argv takes no `.secret(…)` and is stored, logged and
+hashed verbatim — pass credentials through `env`. `workingDirectory: Str?`
+replaces the image's `WORKDIR` and must be an **absolute** path; a tenant
+container's rootfs is **read-only**, so the directory must exist in the image
+or be one of its mount paths. Both are part of the pod's identity, so changing
+either recreates the pod.
 
 ```scl
 containers: #{ "migrate": {
