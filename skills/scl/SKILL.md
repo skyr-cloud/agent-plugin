@@ -231,6 +231,15 @@ let doubled = List.map([1, 2, 3], fn(x) x * 2)
 let identity = fn<T>(x: T) x
 let getName = fn<T <: { name: Str }>(item: T) item.name
 
+// A recursive binding: annotate it, and the recursive call carries the
+// annotated type everywhere in the body. Unannotated, the compiler asks for
+// the annotation wherever it cannot infer the call's result ("the type of a
+// recursive binding cannot be inferred in this position").
+let sum: fn([Int]) Int = fn(xs)
+    switch List.first(xs)
+        case nil: 0
+        case x: x + sum(List.skip(xs, 1))
+
 // Comprehensions: for iterates, if filters, in spreads a whole collection;
 // clauses chain and everything splices in flat (see "List elements" and
 // "Dict entries" below)
