@@ -121,14 +121,21 @@ A deployment moves through five states:
   ordering). A resource whose *name* is itself derived from another resource's
   output holds the rollout the same way, and is named by type while it waits
   (`Waiting to declare a <type> resource: its own identity is still pending`).
-  A declaration whose reads have *all* settled is a dead end — nothing the
-  deployment is doing can resolve it — and says so at warning severity whatever
-  else is going on (`Stuck declaring <resource>: … and nothing in flight can
-  resolve it`), followed once by what the hold costs: while it lasts, resources
-  removed from the program are kept rather than destroyed. Changing the program
-  and pushing is the way out; the deployment keeps checking and repairing what it
-  already owns in the meantime, and opens no incident — the stall is a
-  deployment-log condition, so look there rather than at the deployment's health.
+  A declaration that reads at least one resource and whose reads have *all*
+  settled is a dead end — nothing the deployment is doing can resolve it — and
+  says so at warning severity whatever else is going on (`Stuck declaring
+  <resource>: … and nothing in flight can resolve it`), followed once by what the
+  hold costs: while it lasts, resources removed from the program are kept rather
+  than destroyed. Changing the program and pushing is the way out; the deployment
+  keeps checking and repairing what it already owns in the meantime, and opens no
+  incident — the stall is a deployment-log condition, so look there rather than
+  at the deployment's health. **Do not expect the `Stuck declaring` line for
+  every dead end**: a declaration deferred on a pending that reaches it with no
+  resource behind it at all — a bare `Std/Plugin.pending` a frontend handed over
+  without joining it to a read — keeps the ordinary `Waiting to declare` line,
+  because Skyr cannot tell that apart from a value still on its way. A rollout
+  that is not converging with only waiting lines in the log is that case; read
+  the program rather than waiting for a warning.
 - **Undesired** — teardown: resources not adopted by the successor are
   destroyed in dependency order.
 - **Down** — nothing left; terminal.
