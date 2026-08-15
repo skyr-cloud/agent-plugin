@@ -121,6 +121,12 @@ A deployment moves through five states:
   ordering). A resource whose *name* is itself derived from another resource's
   output holds the rollout the same way, and is named by type while it waits
   (`Waiting to declare a <type> resource: its own identity is still pending`).
+  A declaration whose reads have *all* settled is a dead end — no later pass can
+  resolve it — and says so whatever else the deployment is doing
+  (`Stuck declaring <resource>: … and nothing in flight can resolve it`),
+  followed once by what the hold costs: while it lasts, resources removed from
+  the program are kept rather than destroyed. Fix the program and push; that is
+  the only thing that clears it.
 - **Undesired** — teardown: resources not adopted by the successor are
   destroyed in dependency order.
 - **Down** — nothing left; terminal.
