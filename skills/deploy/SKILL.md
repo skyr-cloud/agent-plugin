@@ -790,7 +790,17 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   or `--from-file` — never an argument, so it stays out of shell history;
   `skyr secrets list` shows metadata only (never values); `skyr secrets delete`
   clears a value. Values are repository-scoped by default, with
-  `--environment [name]` for a per-environment override. In config, read them
+  `--environment [name]` for a per-environment override.
+  `skyr secrets list --environment <env>` lists that environment's whole
+  **inventory** — repository scope, the environment's overrides, *and* the
+  secrets its resources own (a service account's key, a PKI key), which no
+  other listing reaches; it needs `environment:View` on the environment as
+  well as the per-row `secret:View`. `skyr secrets get <version-qid>` prints
+  one **value** to stdout (raw bytes, no trailing newline) for a caller
+  holding `secret:View` on it — `--encoding openssh` converts a generated
+  ed25519 PKCS#8 key, and a value with control characters is refused on a
+  terminal, so redirect it. The web equivalent is the environment's Secrets
+  tab, with a per-row reveal. In config, read them
   via `Std/Secret`: `Secret.get(name).qid` is an opaque reference. Everywhere a
   value may be sensitive it is written `.literal("…")` (a plain value) or
   `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`. Two places
@@ -806,7 +816,12 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `secret:View` on each consumed secret, via an ordinary policy stanza —
   `IAM.Policy({ name: "read-secrets", subjects: [deployer.qid], verbs:
   ["secret:View"], objects: ["<org>/<repo>!*", "<org>/<repo>::*"] })` — or
-  `Secret.get` raises `Secret.NotFound` at eval. **Rotation** (`skyr secrets
+  `Secret.get` raises `Secret.NotFound` at eval. That same verb is what
+  releases plaintext to a *person* (`secrets get`, the web reveal): there is
+  no narrower "metadata only" grant, so a wildcard `secret:View` over a repo
+  is an export grant for every value in it — including keys resources
+  generated — and anyone who can `assumeRole` into that deployment role has
+  it too. **Rotation** (`skyr secrets
   set` again) takes effect on the next deployment, and how depends on where the
   secret is consumed: in `env` the pinned version is part of the pod's identity,
   so the pod is **recreated**; in a read-only volume seed the content is
@@ -883,6 +898,32 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   role, while only a small read allowlist ever takes effect for it. Full model — matcher semantics, object
   shapes, what each verb gates, the anonymous surface:
   `curl -s https://skyr.foo/~docs/iam.md`.
+- **`IAM.ServiceAccount({ name, role })`** — a **service account**: the third
+  kind of principal, a non-human identity an external system (CI, a bot, an
+  agent) signs in as with a role of its own instead of borrowing a person's.
+  Outputs `qid` (its full resource QID — that *is* its account name at every
+  sign-in surface, so renaming the resource is a different account),
+  `privateKey` (the Secret Version QID of a generated Ed25519 key, sealed into
+  the vault on creation and never in resource state — read it out with
+  `skyr secrets get <that qid> --encoding openssh`), and `publicKeyPem`.
+  `role` is a role QID and may name **another org's** role; the account is a
+  member of the *role's* org, not the declaring one, and its standing is that
+  role's, only there. Declaring one needs the declaring repo's deployment role
+  to hold `role:AssignAsRootRole` on the role — decided in the **role's** org,
+  which is that org's opt-in, and it is the *only* check (no
+  `organization:AddMember` beside it) — plus `secret:Write`/`secret:Delete` on
+  the account's own key, matcher
+  `"<org>/<repo>::*:Skyr/IAM.ServiceAccount:*!pem"`. Sign in with
+  `skyr auth signin --username '<qid>' --key <pkcs8-or-openssh-key>`; over git
+  the QID is the SSH username **percent-encoded** — once in the scp-style
+  remote, twice in an `ssh://` one, since git URL-decodes that form before
+  parsing it — so take the URL the repository page prints instead of
+  assembling one. Sessions get no refresh token (re-signing in is the
+  refresh), and credential management, the assistant, notifications and
+  org creation refuse an account outright. Rotation = destroy + re-declare;
+  removal = delete the declaration and deploy, which unregisters it
+  (`skyr resources delete` is refused — only the declaring deployment may —
+  and there is no membership mutation for it).
 - **`Rollout.Group({ name, members })`** — groups the resources created
   inside its `members` closure under one parent resource, giving them a
   shared handle in the resource tree.
