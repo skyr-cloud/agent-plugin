@@ -292,9 +292,11 @@ siblings reach each other on `localhost`.
 **Running something other than the image's default.** A container starts its
 image's own `ENTRYPOINT`/`CMD` unless it says otherwise. The optional
 `execute` field replaces exactly one of those two halves — `.arguments([…])`
-keeps the entrypoint and replaces the `CMD` (the flag-passing case),
-`.command([…])` replaces the entrypoint and drops the `CMD` (the whole command
-line — one image serving both a service and a migration). Nothing parses a
+keeps the entrypoint and replaces the `CMD` (the flag-passing case, which needs
+an image that *has* an `ENTRYPOINT`: on a `CMD`-only image the first argument is
+exec'd as the program and the container dies), `.command([…])` replaces the
+entrypoint and drops the `CMD` (the whole command line — one image serving both
+a service and a migration, and the right choice for a `CMD`-only image). Nothing parses a
 shell, so a pipeline is `.command(["/bin/sh", "-c", "a | b"])`, and an empty
 argv is rejected. An argv takes no `.secret(…)` and is stored, logged and
 hashed verbatim — pass credentials through `env`. `workingDirectory: Str?`
