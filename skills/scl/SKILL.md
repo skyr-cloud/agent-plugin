@@ -26,8 +26,9 @@ Two file kinds share the language:
 ## Mental model
 
 - **No mutation, no loops, no side-effecting statements.** Everything is an
-  expression; iteration is `List.map`/comprehensions; "variables" are
-  immutable `let` bindings.
+  expression; iteration is `List.map`/comprehensions, and collapsing a list to
+  one value is `List.fold`/`List.reduce`; "variables" are immutable `let`
+  bindings.
 - **Resource calls look like function calls** (`Artifact.File({...})`) and
   return records of *outputs*. Referencing an output of resource A is what
   creates the dependency edge A → B — whether B's inputs are built from it,
@@ -226,6 +227,11 @@ let gated = with (db) { url: db.url }       // exists only once `db` does (below
 // Anonymous functions (closures). Param types inferred when context knows them.
 let double = fn(x: Int) x * 2
 let doubled = List.map([1, 2, 3], fn(x) x * 2)
+
+// Aggregating: fold carries an accumulator, reduce starts from the first
+// element and is nil-valued on an empty list. Prefer these over recursion.
+let total = List.fold([1, 2, 3], 0, fn(acc: Int, x: Int) acc + x)  // 6
+let biggest = List.reduce([3, 1, 2], fn(a: Int, b: Int) if (a > b) a else b)
 
 // Generics, with optional subtype bounds
 let identity = fn<T>(x: T) x
