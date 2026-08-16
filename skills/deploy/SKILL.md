@@ -132,8 +132,8 @@ A deployment moves through five states:
   deployment as well as in the log — `skyr deployments list` counts holds in a
   `HELD` column and spells each one out beneath the table, and the API answers
   them on `Deployment.status.holds`. That is the surface to check when the log
-  has scrolled past the moment the hold began. The same list carries the two
-  other waits that leave a healthy deployment unfinished: an unset, defaultless
+  has scrolled past the moment the hold began. The same list carries the other
+  waits that leave a healthy deployment unfinished: an unset, defaultless
   knob; a read of a resource another deployment has yet to create or update; and
   an unset knob in another deployment's environment, which waits on a person you
   may not be. Each names who is expected to clear it, and only the stalled
