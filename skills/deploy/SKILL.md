@@ -128,8 +128,15 @@ A deployment moves through five states:
   hold costs: while it lasts, resources removed from the program are kept rather
   than destroyed. Changing the program and pushing is the way out; the deployment
   keeps checking and repairing what it already owns in the meantime, and opens no
-  incident — the stall is a deployment-log condition, so look there rather than
-  at the deployment's health. **Do not expect the `Stuck declaring` line for
+  incident. A stall is a **hold**, not a failure, and it is carried on the
+  deployment as well as in the log — `skyr deployments list` counts holds in a
+  `HELD` column and spells each one out beneath the table, and the API answers
+  them on `Deployment.status.holds`. That is the surface to check when the log
+  has scrolled past the moment the hold began. The same list carries the two
+  other waits that leave a healthy deployment unfinished: an unset, defaultless
+  knob, and a read of a resource another deployment has not created yet. Each
+  names who is expected to clear it, and only the stalled declaration has nobody.
+  **Do not expect the `Stuck declaring` line for
   every dead end**: a declaration deferred on a pending that reaches it with no
   resource behind it at all — a bare `Std/Plugin.pending` a frontend handed over
   without joining it to a read — keeps the ordinary `Waiting to declare` line,
@@ -846,7 +853,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   deployment log names each open gate (`Waiting for user input: knob <name> —
   <description>`, once per gate, re-announced if the knob is later cleared),
   alongside a `Waiting to declare <resource>` line for each dependent the gate
-  is holding back.
+  is holding back. The open gate is also a **hold** on the deployment itself
+  (`skyr deployments list`'s `HELD` column, `Deployment.status.holds`), which is
+  where to look when the log has scrolled past.
   Turn a knob with
   `skyr knobs set <name> <value>` (plain argv — knobs are non-secret; env from
   ambient context or `--environment`) or the web env **Knobs** tab (`~k`);
