@@ -134,8 +134,10 @@ A deployment moves through five states:
   them on `Deployment.status.holds`. That is the surface to check when the log
   has scrolled past the moment the hold began. The same list carries the two
   other waits that leave a healthy deployment unfinished: an unset, defaultless
-  knob, and a read of a resource another deployment has not created yet. Each
-  names who is expected to clear it, and only the stalled declaration has nobody.
+  knob; a read of a resource another deployment has yet to create or update; and
+  an unset knob in another deployment's environment, which waits on a person you
+  may not be. Each names who is expected to clear it, and only the stalled
+  declaration has nobody.
   **Do not expect the `Stuck declaring` line for
   every dead end**: a declaration deferred on a pending that reaches it with no
   resource behind it at all — a bare `Std/Plugin.pending` a frontend handed over
