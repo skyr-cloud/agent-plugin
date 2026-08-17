@@ -361,8 +361,19 @@ let http = pod.Port({ port: 8080, public: true })
 
 `public: true` opens the port to the internet — both on the pod's IPv6 and
 on any bound IPv4 address (next section). Without it the port only accepts
-traffic from attached internal networks. `protocol` defaults to `.tcp`
-(`.udp` is the other option).
+traffic from attached internal networks.
+
+`protocols` defaults to `[.tcp]`; `.udp` is the other member. One call is one
+opening, so a service that shares a port number across transports names them
+together rather than declaring the port twice:
+
+```scl
+pod.Port({ port: 443, protocols: [.tcp, .udp], public: true })  // HTTP/2 + HTTP/3
+pod.Port({ port: 53, protocols: [.tcp, .udp] })                 // DNS
+```
+
+Order and repeats don't matter — the opening is the set — and an empty list is
+refused rather than treated as the default.
 
 ### A stable public IPv4
 
