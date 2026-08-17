@@ -118,8 +118,13 @@ A deployment moves through five states:
   (`Waiting to declare <resource>: one of its inputs is still pending`, once per
   stuck declaration, and only on a pass with nothing else in flight — while
   resources are being created, a declaration waiting its turn is ordinary
-  ordering). A resource whose *name* is itself derived from another resource's
-  output holds the rollout the same way, and is named by type while it waits
+  ordering). Where Skyr can tell which read has not resolved, the line ends by
+  naming it (`… (waiting on <resource>)`) — the resource to go look at. Where it
+  cannot, the line falls back to listing everything the declaration reads
+  (`… (it reads <resource>, <resource>)`), which is a hedge rather than a
+  verdict: the culprit is one of them. A resource whose *name* is itself
+  derived from another resource's output holds the rollout the same way, and is
+  named by type while it waits
   (`Waiting to declare a <type> resource: its own identity is still pending`).
   A declaration that reads at least one resource and whose reads have *all*
   settled is a dead end — nothing the deployment is doing can resolve it — and
