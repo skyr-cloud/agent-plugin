@@ -947,7 +947,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   role's, only there. Declaring one needs the declaring repo's deployment role
   to hold `role:AssignAsRootRole` on the role — decided in the **role's** org,
   which is that org's opt-in, and it is the *only* check (no
-  `organization:AddMember` beside it) — plus `secret:Write`/`secret:Delete` on
+  `organization:InviteMember` beside it) — plus `secret:Write`/`secret:Delete` on
   the account's own key, matcher
   `"<org>/<repo>::*:Skyr/IAM.ServiceAccount:*!pem"`. Sign in with
   `skyr auth signin --username '<qid>' --key <pkcs8-or-openssh-key>`; over git
