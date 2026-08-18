@@ -126,30 +126,33 @@ A deployment moves through five states:
   derived from another resource's output holds the rollout the same way, and is
   named by type while it waits
   (`Waiting to declare a <type> resource: its own identity is still pending`).
-  A declaration that reads at least one resource and whose reads have *all*
-  settled is a dead end — nothing the deployment is doing can resolve it — and
-  says so at warning severity whatever else is going on (`Stuck declaring
-  <resource>: … and nothing in flight can resolve it`), followed once by what the
-  hold costs: while it lasts, resources removed from the program are kept rather
-  than destroyed. Changing the program and pushing is the way out; the deployment
-  keeps checking and repairing what it already owns in the meantime, and opens no
+  A declaration whose reads have settled is a dead end — nothing the
+  deployment is doing can resolve it — and says so at warning severity
+  whatever else is going on (`Stuck declaring <resource>: … and nothing in
+  flight can resolve it`), followed once by what the hold costs: while it
+  lasts, resources removed from the program are kept rather than destroyed.
+  Changing the program and pushing is the way out; the deployment keeps
+  checking and repairing what it already owns in the meantime, and opens no
   incident. A stall is a **hold**, not a failure, and it is carried on the
   deployment as well as in the log — `skyr deployments list` counts holds in a
   `HELD` column and spells each one out beneath the table, and the API answers
   them on `Deployment.status.holds`. That is the surface to check when the log
   has scrolled past the moment the hold began. The same list carries the other
   waits that leave a healthy deployment unfinished: an unset, defaultless
-  knob; a read of a resource another deployment has yet to create or update; and
-  an unset knob in another deployment's environment, which waits on a person you
-  may not be. Each names who is expected to clear it, and only the stalled
-  declaration has nobody.
-  **Do not expect the `Stuck declaring` line for
-  every dead end**: a declaration deferred on a pending that reaches it with no
-  resource behind it at all — a bare `Std/Plugin.pending` a frontend handed over
-  without joining it to a read — keeps the ordinary `Waiting to declare` line,
-  because Skyr cannot tell that apart from a value still on its way. A rollout
-  that is not converging with only waiting lines in the log is that case; read
-  the program rather than waiting for a warning.
+  knob; a read of a resource another deployment has yet to create or update;
+  and an unset knob in another deployment's environment, which waits on a
+  person you may not be. Each names who is expected to clear it, and only the
+  stalled declaration has nobody. The dead-end test asks the narrower set
+  wherever Skyr has one: a declaration waiting on a read that is already final
+  is stuck even while unrelated work is in flight. Where it cannot say which
+  read it waits on, every resource the declaration reads has to have settled
+  before the line is earned. **Do not expect the `Stuck declaring` line for
+  every dead end**: a declaration deferred on a pending that reaches it with
+  no resource behind it at all — a bare `Std/Plugin.pending` a frontend handed
+  over without joining it to a read — keeps the ordinary `Waiting to declare`
+  line, because Skyr cannot tell that apart from a value still on its way. A
+  rollout that is not converging with only waiting lines in the log is that
+  case; read the program rather than waiting for a warning.
 - **Undesired** — teardown: resources not adopted by the successor are
   destroyed in dependency order.
 - **Down** — nothing left; terminal.
