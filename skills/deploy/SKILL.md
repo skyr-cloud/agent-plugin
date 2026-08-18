@@ -697,8 +697,8 @@ The five use verbs are `resource:AttachPodToNetwork`,
 `resource:MountVolume`, and `resource:BindInternetAddress`. (Two more verbs sit
 outside the standard family without being use verbs at all:
 `resource:ForwardPodPort` and `resource:ExecInPod` are checked when an
-*operator* reaches into a running pod, not at any transition — see the rollout
-section.) Enforcement is
+*operator* reaches into a running pod, not at any transition — see "Watching a
+rollout".) Enforcement is
 **uniform** — your own environment's resources are checked too; it's invisible
 only because a repo's deployment role defaults to the org's `Super` role, which
 short-circuits within that org. A restricted role needs the grants for its own
