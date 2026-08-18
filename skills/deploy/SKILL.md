@@ -5,10 +5,12 @@ description: >-
     and the deployment lifecycle, rolling a deployment back, exposing pods to
     the internet (ports, InternetAddress, DNS zones), private networking and
     routing between networks, sharing networks, volumes and addresses across
-    repositories, first-party plugin capabilities, and checking rollout status
-    and incidents. Use when deploying to Skyr, wiring a repository to a Skyr
-    instance, exposing a service publicly, connecting private networks, rolling
-    back a bad deployment, or debugging a rollout.
+    repositories, first-party plugin capabilities, checking rollout status and
+    incidents, and reaching into a running pod (port forwarding, running a
+    command or a shell in a container). Use when deploying to Skyr, wiring a
+    repository to a Skyr instance, exposing a service publicly, connecting
+    private networks, rolling back a bad deployment, debugging a rollout, or
+    getting a shell inside a deployed container.
 ---
 
 # Deploying to Skyr
@@ -692,7 +694,11 @@ IAM.Policy({
 
 The five use verbs are `resource:AttachPodToNetwork`,
 `resource:AttachRouterToNetwork`, `resource:AttachDnsRecordToNetwork`,
-`resource:MountVolume`, and `resource:BindInternetAddress`. Enforcement is
+`resource:MountVolume`, and `resource:BindInternetAddress`. (Two more verbs sit
+outside the standard family without being use verbs at all:
+`resource:ForwardPodPort` and `resource:ExecInPod` are checked when an
+*operator* reaches into a running pod, not at any transition — see the rollout
+section.) Enforcement is
 **uniform** — your own environment's resources are checked too; it's invisible
 only because a repo's deployment role defaults to the org's `Super` role, which
 short-circuits within that org. A restricted role needs the grants for its own
@@ -1090,16 +1096,51 @@ forward only ever targets a `Skyr/Container.Pod.Port`, the type may also be left
 out and the port named alone:
 
 ```sh
-skyr port-forward stockholm:Skyr/Container.Pod.Port:web-1a2b3c:8080/tcp 8080
-skyr port-forward web-1a2b3c:8080/tcp 8080
+skyr port-forward stockholm:Skyr/Container.Pod.Port:web-3c6e542590f0cc60:8080/tcp 8080
+skyr port-forward web-3c6e542590f0cc60:8080/tcp 8080
+skyr port-forward web:8080 8080
 ```
+
+The `-3c6e542590f0cc60` is a hash of the pod's spec: it changes whenever the pod
+does, so it can't be typed from memory. Because `port-forward` and `exec` each
+target exactly one type, they also match a name with the hash left out against
+what is actually running — the third line above. Anything that resolves exactly
+is used as it stands; a name several alive resources answer to is reported with
+the candidates listed as pasteable identifiers.
 
 Anything else — a `Skyr/Container.Pod`, say — is refused before the tunnel is
 dialled: a declared port is what opens the pod's firewall, so it is the only
 thing a forward can land on. The edge to tunnel through is the git server of the
 checkout you run from; override with `--scs-address host:port`, and outside a
 checkout an explicitly set `--api-url`/`SKYR_API_URL` names the instance (port
-22), falling back to `skyr.cloud:22`.
+22), falling back to `skyr.cloud:22`. `exec` picks its edge the same way, and
+every SSH connection the CLI makes is held to the host keys the instance's API
+publishes — a mismatch is a hard error naming both keys, never a prompt.
+
+To run a command — or get an interactive shell — inside a running container,
+without exposing a port:
+
+```sh
+skyr exec web                           # a shell in the pod's only container
+skyr exec web -c app ls -l /app         # a named container, and one command
+echo 'select 1' | skyr exec db psql     # a pipe: input streams in, no terminal
+```
+
+Everything after the pod belongs to the command, so put `--` after the pod when
+the command's own first word looks like one of `skyr exec`'s flags. A pod with
+one container needs no `-c`; one with several is not guessed at, and the error
+lists the names. Interactivity is detected rather than requested: input is
+forwarded because there is input, and a terminal is allocated only when the
+calling process is attached to one at both stdin and stdout (`--no-tty` and
+`--no-stdin` opt out), so driving this from a script needs no flags. The
+command's exit code is `skyr exec`'s, verbatim; every way `skyr exec` *itself*
+fails exits **255** instead, which is how a script tells "the command exited 1"
+from "the command never ran". A pod that was never created, has been destroyed,
+or is not yet placed on a node is refused before anything is dialled.
+
+Exec is authorized on `resource:ExecInPod` against the pod — a separate and far
+broader grant than `resource:ForwardPodPort`, since a command inside a container
+reaches that container's environment and mounted secrets.
 
 ## When a rollout goes wrong
 
