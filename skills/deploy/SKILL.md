@@ -128,10 +128,23 @@ A deployment moves through five states:
   derived from another resource's output holds the rollout the same way, and is
   named by type while it waits
   (`Waiting to declare a <type> resource: its own identity is still pending`).
+  A **branch** the successor cannot decide holds the rollout the same way, and
+  for the sharper version of the same reason: a resource declared inside an
+  `if` whose condition is still pending is never even attempted, so there is no
+  declaration to name. The log says where the program stopped short instead
+  (`Waiting at <construct> in <module> (<span>): a pending value decided
+  it, so a region that could declare resources went unexplored`), naming the
+  reads it is stuck behind on the same terms as a declaration's line. One
+  unreadable value is one line however many branches it decided against — a
+  gate in a frontend, the `if` inside the helper that gate calls — because they
+  resolve together. A branch that could not have declared anything is not a
+  hold at all: picking between two strings leaves nothing undeclared, so a
+  `?? pending` fence over a value you only interpolate is silent.
   A declaration whose reads have settled is a dead end — nothing the
   deployment is doing can resolve it — and says so at warning severity
   whatever else is going on (`Stuck declaring <resource>: … and nothing in
-  flight can resolve it`), followed once by what the hold costs: while it
+  flight can resolve it`; `Stuck at <construct> in <module> …` for a branch),
+  followed once by what the hold costs: while it
   lasts, resources removed from the program are kept rather than destroyed.
   Changing the program and pushing is the way out; the deployment keeps
   checking and repairing what it already owns in the meantime, and opens no
@@ -765,7 +778,9 @@ container never resolves, collapsing a fold to pending forever):
 
 ```scl
 // `serve` is created only once the migration exits cleanly; while the code is
-// pending the `if` condition is pending and `serve` is deferred.
+// pending the `if` condition is pending, neither branch runs, and the pass says
+// so — it is a branch that could have declared and did not, which holds the
+// rollout exactly as a resource with a pending input does.
 let serve = if (migrate.exitCodes["migrate"] == 0)
     Container.Pod({ name: "serve", containers: #{ "web": { image: webImage.url, cpu: 1000, memory: 536870912 } } })
 ```
