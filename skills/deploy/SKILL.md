@@ -132,10 +132,10 @@ A deployment moves through five states:
   for the sharper version of the same reason: a resource declared inside an
   `if` whose condition is still pending is never even attempted, so there is no
   declaration to name. The log says where the program stopped short instead
-  (`Waiting at <construct> in <module> (<span>): a pending value decided
+  (`Waiting at <construct> in <module> (<span>): a pending value settled
   it, so a region that could declare resources went unexplored`), naming the
   reads it is stuck behind on the same terms as a declaration's line. One
-  unreadable value is one line however many branches it decided against — a
+  unreadable value is one line however many regions it kept the pass out of — a
   gate in a frontend, the `if` inside the helper that gate calls — because they
   resolve together. A branch that could not have declared anything is not a
   hold at all: picking between two strings leaves nothing undeclared, so a
