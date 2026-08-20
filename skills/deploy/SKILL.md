@@ -322,9 +322,9 @@ let pod = Container.Pod({
 `Image` builds from a directory in the repo and pushes to the instance
 registry; `image.url` is digest-pinned. Public images (`"caddy:2"`) work
 directly as `image` values. `containers` is a **name-keyed map**
-(`#{ "name": { ... } }`); the key names the container in logs and in the pod's
-`exitCodes` output. `cpu` and `memory` are **required** on every container —
-both are hard limits. Containers in the same pod share a network namespace, so
+(`#{ "name": { ... } }`); the key names the container in logs and, for
+containers that can finish, in the pod's `exitCodes` output. `cpu` and
+`memory` are **required** on every container — both are hard limits. Containers in the same pod share a network namespace, so
 siblings reach each other on `localhost`.
 
 **Running something other than the image's default.** A container starts its
@@ -1062,8 +1062,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   it is made of has materialized — and where a resource can say whether it
   *works*, materialized includes having been seen working: a pod counts once
   its addresses are allocated, its finishable containers have finished, and
-  every container that keeps it alive is running and answering its `probe`
-  where it declares one. So returning the whole pod from `replica` is what
+  every container that keeps it alive is either running and answering its
+  `probe` where it declares one, or finished with the work it was given (a
+  clean exit for an `.onFailure` job, any exit for a `.never` one — a job that
+  gave up does not count). So returning the whole pod from `replica` is what
   makes a replacement that comes up broken **hold** the roll (old generation
   still serving, a `Crash` incident saying why) instead of retiring a replica
   that works; the gate is one-way, and a replica that has stood is not
