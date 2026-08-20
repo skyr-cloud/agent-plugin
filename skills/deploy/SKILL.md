@@ -264,7 +264,9 @@ resource, so a deployment can roll *itself* back:
 ```scl
 import Skyr/Rollout
 
-// Whatever your code decides from — a knob, a probe output, a version.
+// Whatever your code decides from — a knob, a version, or a pod's own
+// `health` output (`.degraded`/`.failing` once that pod has worked at least
+// once; pending before then, so a condition over it simply waits).
 if (degraded)
     Rollout.Rollback({ reason: "Health check remained degraded" })
 else
@@ -735,7 +737,7 @@ after the grant is gone.
 ## Restart, jobs, and scheduled runs
 
 There is **no Job or CronJob resource** — run-to-completion and scheduling are
-per-container policy on an ordinary `Container.Pod`. Each container takes four
+per-container policy on an ordinary `Container.Pod`. Each container takes five
 optional policy fields:
 
 - **`restart`** — `.always` (default: restart on any exit — crash recovery for
@@ -752,6 +754,26 @@ optional policy fields:
 - **`timeout`** — `Time.Duration?`, a per-attempt kill budget. Must be
   millisecond-valued (a multiple of `Time.second`/`Time.day`/…); a
   calendar-month duration is rejected.
+- **`probe`** — `Probe?`, absent by default: how Skyr asks a container whether
+  it is still *serving*, for a workload that can stop serving without exiting.
+  `{ kind: .http({ port, path? }) }` (2xx/3xx passes) or
+  `{ kind: .tcp({ port }) }` (a completed connection passes), plus optional
+  `initialDelay`/`interval`/`timeout`/`startupWindow` (millisecond-valued
+  durations, positive) and `failureThreshold` (a positive count), each
+  defaulted by Skyr when omitted. The check runs *from inside the pod*, so the
+  port need not be one `pod.Port` opened — and usually should not be. **One
+  probe covers startup, readiness and liveness, because its role changes with
+  the container's phase**: before its first success it is readiness (a failure
+  kills nothing, so a slow start is safe; a container still failing after
+  `startupWindow` is restarted as hung), after it is liveness
+  (`failureThreshold` failures in a row stop the container). Its first success
+  is also what the pod's readiness waits for, which is what a `ReplicaSet`
+  replica built from the pod stands on. A probe
+  never restarts anything by a route of its own — it stops the container and
+  `restart` decides, so a workload that hangs sick gets the same backoff,
+  retry cap and crash-loop judgment as one that exits sick. Adding, changing
+  or removing a probe **recreates the pod**. `skyr run` accepts one and does
+  not execute it.
 
 A **job** is just a pod whose container uses `.onFailure`/`.never`; job-ness is
 implied by configuration, never declared.
@@ -774,11 +796,12 @@ let migrate = Container.Pod({
 })
 ```
 
-**Completion** surfaces as the pod's `exitCodes: #{Str: Int}` output — each
-container's final exit code, keyed by name. A key is a **pending** value until
-that container's final termination, so you sequence and gate with plain control
-flow, keying the specific container (never folding the whole map — a `.always`
-container never resolves, collapsing a fold to pending forever):
+**Completion** surfaces as the pod's `exitCodes: #{Str: Int}` output — the
+final exit code of each container that **can reach one**, keyed by name. Only
+`.onFailure` and `.never` containers are keyed; a `.always` one restarts
+forever and has **no key**, so reading it yields `nil`. A key that exists is a
+**pending** value until that container's final termination, so you sequence and
+gate with plain control flow, keying the specific container:
 
 ```scl
 // `serve` is created only once the migration exits cleanly; while the code is
@@ -793,6 +816,14 @@ The gate lives in the `if` condition, not the pod's inputs, so `serve`'s
 identity stays stable — and gating on `migrate` is an edge all the same, so
 teardown destroys `serve` first and `migrate` outlives it. An `else` branch
 handles remediation on a final non-zero exit.
+
+Two consequences of unkeyed `.always` containers, both quiet: a comparison
+against a missing key is `nil == 0` — **false immediately**, taking the `else`
+branch rather than waiting, so a gate naming the wrong container looks like a
+gate whose condition is merely false (compare against `nil` when you mean "has
+it terminated"); and a fold over the whole map no longer wedges on pending,
+but over a pod of nothing but `.always` containers it folds an **empty** map,
+where `List.all` is vacuously `true`. Key the container you mean.
 
 **Cron** is a job pod whose *name* embeds a tick value from `Time.now` (or
 `Time.tick(interval, offset)` for an offset schedule like "04:00 UTC daily").
@@ -1028,9 +1059,17 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   replicas up — leave room for it in anything counted. Mid-roll `.replicas`
   deliberately holds both generations, so a DNS record or member list over
   the whole set stays complete. A replica counts as up only once everything
-  it is made of has materialized; the set is volatile (deployment stays
-  `Desired`) until it settles. Everything a replica builds is a sub-resource
-  of the set. `name` is the whole identity — renaming rebuilds from scratch,
+  it is made of has materialized — and where a resource can say whether it
+  *works*, materialized includes having been seen working: a pod counts once
+  its addresses are allocated, its finishable containers have finished, and
+  every container that keeps it alive is running and answering its `probe`
+  where it declares one. So returning the whole pod from `replica` is what
+  makes a replacement that comes up broken **hold** the roll (old generation
+  still serving, a `Crash` incident saying why) instead of retiring a replica
+  that works; the gate is one-way, and a replica that has stood is not
+  retired by later unhealth. The set is volatile (deployment stays `Desired`)
+  until it settles. Everything a replica builds is a sub-resource of the set.
+  `name` is the whole identity — renaming rebuilds from scratch,
   while `count: 0` keeps the set and holds nothing. Under `skyr run` the loop
   reconciles on change rather than on a timer, so a roll advances one step per
   save locally, and the replicas a roll retires come down when the run restarts
@@ -1178,6 +1217,22 @@ user-visible consequence, least to most severe:
 | `CannotProgress` | The entity is stable, but something derived/dependent could not be applied. |
 | `InconsistentState` | Reality drifted from config and reconciliation can't close the gap. |
 | `Crash` | The thing is misbehaving with user-visible downtime. |
+
+The badge on a deployment or resource is the **worse** of two readings: what
+its open incidents say about Skyr's ability to operate it, and what the last
+check said about whether the live thing is working. For a pod the second is a
+real judgment: `Crash` means a container is crash-looping, has stopped
+answering its probe, or is a job that spent every retry without succeeding, and
+the incident message names that container and what is wrong with it. Three
+readings that surprise people: a pod lost with its node or sandbox is **not** a
+crash (it is rebuilt silently — `Crash` is for infrastructure that is fine
+under a workload that is not); a **degraded** judgment opens no incident and
+*closes* open ones, because a pod that is merely restarting too much is still
+serving; and a verdict is held until something disproves it, so a probe-bearing
+service that crashed once while coming up reads down until its probe actually
+passes, silence never counting as recovery. A pod that has never served is
+reported broken *and* does not count as standing for a `ReplicaSet` — that is
+what explains a roll that is not advancing.
 
 An **uncaught SCL exception** during evaluation — reading a secret that isn't
 set, unwrapping a `nil`, any top-level `raise` your config doesn't `catch` —
