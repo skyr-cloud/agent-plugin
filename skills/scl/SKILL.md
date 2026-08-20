@@ -268,10 +268,11 @@ let safe = try risky(input)
 
 Operator notes: `+` concatenates strings; `Int`+`Float` arithmetic yields
 `Float`; integer division truncates (`10 / 3` → `3`); `as` (type cast) binds
-tighter than every binary operator, so `(1 + x) as Int` needs the parens, and it
-re-types one value rather than producing another, so narrowing passes through
-it — though only for the cast value itself, not a fact proved about a field of
-a record being cast. `;`
+tighter than every binary operator, so `(1 + x) as Int` needs the parens.
+Narrowing passes through an ascription to the type a value already has (`if ((x
+!= nil) as Bool) x` narrows `x`); one that *changes* the type refines only the
+cast view, so a narrowing cast in a condition leaves its operand alone. Neither
+carries a fact proved about a *field* through a cast of the record around it. `;`
 binds loosest and is the only right-associative one — `a; b; c` is `a; (b; c)`,
 its type is the last operand's, and any type may be discarded.
 
