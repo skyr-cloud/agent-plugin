@@ -139,7 +139,11 @@ A deployment moves through five states:
   gate in a frontend, the `if` inside the helper that gate calls — because they
   resolve together. A branch that could not have declared anything is not a
   hold at all: picking between two strings leaves nothing undeclared, so a
-  `?? pending` fence over a value you only interpolate is silent.
+  `?? pending` fence over a value you only interpolate is silent. Both rules
+  cover every region a pending value skips rather than decides, not only a
+  branch: an operator's right-hand side, an index expression, and the parts of
+  an interpolated string after a pending one are held when they declare and
+  silent when they do not.
   A declaration whose reads have settled is a dead end — nothing the
   deployment is doing can resolve it — and says so at warning severity
   whatever else is going on (`Stuck declaring <resource>: … and nothing in
