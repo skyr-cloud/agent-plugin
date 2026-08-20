@@ -1033,8 +1033,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   of the set. `name` is the whole identity — renaming rebuilds from scratch,
   while `count: 0` keeps the set and holds nothing. Under `skyr run` the loop
   reconciles on change rather than on a timer, so a roll advances one step per
-  save locally and retired replicas come down on restart or ctrl+C; a real
-  deployment paces itself.
+  save locally and retired replicas come down on the first settled pass after
+  the roll finishes — or on restart or ctrl+C if the run never reaches one; a
+  real deployment paces itself.
 - **`Rollout.Rollback({ reason? })`** — declaring it asks the platform to roll
   this deployment back; see the rollback section above for the identity rules,
   the required `environment:Rollback` grant, and the inert-deployment hazard.
