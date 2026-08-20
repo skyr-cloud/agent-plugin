@@ -268,7 +268,10 @@ let safe = try risky(input)
 
 Operator notes: `+` concatenates strings; `Int`+`Float` arithmetic yields
 `Float`; integer division truncates (`10 / 3` → `3`); `as` (type cast) binds
-tighter than every binary operator, so `(1 + x) as Int` needs the parens. `;`
+tighter than every binary operator, so `(1 + x) as Int` needs the parens, and it
+re-types one value rather than producing another, so narrowing passes through
+it — though only for the cast value itself, not a fact proved about a field of
+a record being cast. `;`
 binds loosest and is the only right-associative one — `a; b; c` is `a; (b; c)`,
 its type is the last operand's, and any type may be discarded.
 
