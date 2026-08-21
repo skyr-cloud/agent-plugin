@@ -387,7 +387,7 @@ lands in the enclosing dict — never a dict of dicts.
   its key and value types join like an entry's.
 - **A dict's shape is its key set; values decide nothing about it.** A
   pending entry *value* (an unmaterialized resource output, say) stays in its
-  slot: `Dict.size`/`Dict.keys` and sibling entries answer while that entry
+  slot: `Dict.length`/`Dict.keys` and sibling entries answer while that entry
   alone defers. Only what decides the keys makes the whole literal pending —
   a pending key, `if` condition, `for` iterable, or spread operand.
 - Neither `for` nor `if` adds optionality: `#{if (c) "k": 1}` is `#{Str: Int}`
