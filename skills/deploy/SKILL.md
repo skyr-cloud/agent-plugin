@@ -453,11 +453,13 @@ zone.CNAMERecord({ name: "www", target: "example.com" })
 - Bad inputs raise `DNS.InvalidDnsInput` at evaluation time: a name outside the
   grammar, a CNAME or NS at the apex, a CAA `flags` outside 0–255, and a
   `ttl`/`defaultTtl` that is not a whole number of seconds from 1 to 2147483647
-  — which rules out a calendar-month duration (`Time.month`, `Time.year`),
-  anything sub-second or fractional, and anything past roughly 68 years. Use a
-  multiple of `Time.second`, `Time.minute`, `Time.hour` or `Time.day`. The
-  raise fails at the offending call rather than at the plugin; `skyr run`
-  surfaces it locally, and `skyr check` does not evaluate, so it does not.
+  — which rules out anything sub-second or fractional, and anything past
+  roughly 68 years. Use a multiple of `Time.second`, `Time.minute`, `Time.hour`
+  or `Time.day`. The raise fails at the offending call rather than at the
+  plugin; `skyr run` surfaces it locally, and `skyr check` does not evaluate, so
+  it does not. A calendar-month span (`Time.month`, `Time.year`) is refused
+  earlier still: a TTL is a `Time.Duration`, a fixed length, and a calendar span
+  is a `Time.CalendarDuration` — a type error, which `skyr check` does report.
   Records default to the zone's `defaultTtl`, itself 5 minutes unless set.
 - The AAAA record above tracks the pod's IPv6 because Skyr re-evaluates the
   config and updates the record when the pod is replaced. Anything *outside*
@@ -751,16 +753,17 @@ optional policy fields:
   sidecar is stopped when the pod reaps.
 - **`maxRetries`** — `Int?`, valid only with `.onFailure`; absent means retry
   forever, `N` permits `N + 1` executions before the last failing exit is final.
-- **`timeout`** — `Time.Duration?`, a per-attempt kill budget. Must be
-  millisecond-valued (a multiple of `Time.second`/`Time.day`/…); a
-  calendar-month duration is rejected.
+- **`timeout`** — `Time.Duration?`, a per-attempt kill budget. A
+  `Time.Duration` is a fixed length (a multiple of `Time.second`/`Time.day`/…);
+  a calendar-month span is a `Time.CalendarDuration` and does not type-check
+  here.
 - **`probe`** — `Probe?`, absent by default: how Skyr asks a container whether
   it is still *serving*, for a workload that can stop serving without exiting.
   `{ kind: .http({ port, path? }) }` (2xx/3xx passes) or
   `{ kind: .tcp({ port }) }` (a completed connection passes), plus optional
-  `initialDelay`/`interval`/`timeout`/`startupWindow` (millisecond-valued
-  durations, positive) and `failureThreshold` (a positive count), each
-  defaulted by Skyr when omitted. The check runs *from inside the pod*, so the
+  `initialDelay`/`interval`/`timeout`/`startupWindow` (each a `Time.Duration`,
+  so a fixed length, and positive) and `failureThreshold` (a positive count),
+  each defaulted by Skyr when omitted. The check runs *from inside the pod*, so the
   port need not be one `pod.Port` opened — and usually should not be. **One
   probe covers startup, readiness and liveness, because its role changes with
   the container's phase**: before its first success it is readiness (a failure
