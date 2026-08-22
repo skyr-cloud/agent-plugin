@@ -153,8 +153,9 @@ let mode: Mode = .prod              // .prod alone has type enum { .prod }
 - **String boundary**: a *bare* atom's interpolation and `Encoding.toJson` drop
   the dot (`.prod` → `"prod"`); `fromJson` never yields an atom. Like `Path`,
   atom-ness does not survive leaving the system. A *tagged* atom has no plain
-  form — interpolation renders it whole (`.ok(1)`) and JSON/YAML encoding
-  rejects it.
+  form — interpolation renders it whole (`.ok(1)`); JSON/YAML/TOML encode it,
+  lossily, as a one-key object carrying the payload (`.literal("x")` →
+  `{"literal":"x"}`, `.pair(1, 2)` → `{"pair":[1,2]}`).
 
 ```scl
 // Optional enum field with a default; ?? joins the default's singleton back in.
