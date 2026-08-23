@@ -1109,8 +1109,13 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   argument is the Skyr identity (renaming = destroy + create), and inputs the
   provider deems non-updatable also replace on change, mirroring Terraform's
   requires-replace. Field names come from the provider's own schema — trust
-  editor completions/hover over guessing. (`HashiCorp/Random` is the same
-  machinery wired only into the local dev harness.)
+  editor completions/hover over guessing. A value the provider *returns* and
+  flags sensitive is sealed into the vault as the resource's own secret and its
+  output carries the Secret Version QID, not the value (so the repo's
+  deployment role needs `secret:Write` and `secret:Delete`); a sensitive value
+  of any other shape than a string has no output field at all.
+  (`HashiCorp/Random` is the same machinery wired only into the local dev
+  harness.)
 
 Exact inputs/outputs for the first-party modules live in the generated module
 reference — look them up rather than guessing (see below).
