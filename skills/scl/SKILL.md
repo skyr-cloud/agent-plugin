@@ -211,6 +211,38 @@ shadowed arm is an unreachable-case error. A top-level binder types at the
 list/cons patterns, `@`-bindings, and `case … if` guards are **not yet
 supported**.
 
+The same patterns bind an **inline `let`** and a **function parameter**, with any
+annotation following the pattern — a plain name is just the degenerate case:
+
+```scl
+type Endpoint enum { .endpoint(Str, Int) }
+let address = fn(.endpoint(host, port): Endpoint) "{host}:{port}"  // no switch needed
+let hostOf = fn(e: Endpoint) let .endpoint(h, _) = e; h
+```
+
+- **Irrefutable only**: the pattern must cover the type by itself, there being no
+  other arm. A name and `_` always do; a variant pattern only against an enum
+  with that one variant, recursing slotwise; nothing but a name or `_` covers an
+  optional type, `nil` included. Anything else is a compile error naming the
+  uncovered type and pointing at `switch`. This is what lets a one-variant enum —
+  a tagged group of positional fields — come apart without a one-armed `switch`.
+- **The judged type** is the annotation, else (parameter) the type context
+  expects, else (let) the bound expression's inferred type. A pattern parameter
+  in synthesis position still needs its annotation, as any parameter does.
+- `_` binds nothing: `let _ = e; body` runs `e` and drops the value, a `_`
+  parameter never names its argument, and mentioning `_` is an undefined
+  variable.
+- **One name per binding site** — one pattern or a whole parameter list — so
+  `fn(a: Int, a: Str)` is a duplicate-binding error, not shadowing.
+- Destructuring is field extraction, not matching: a pending value hands each
+  binder a pending of its own and the body still runs, where a `switch` on it
+  would defer.
+- **Module-level `let`/`export let` and a REPL line's own `let` keep a plain-name
+  binder** (one export slot, one init-order node); a pattern there is a dedicated
+  error telling you to destructure in an inner `let`. The restriction is on the
+  binder alone — a module-level binding may hold a function with pattern
+  parameters.
+
 ## Expressions
 
 Everything is an expression; there are no statements inside function bodies.
