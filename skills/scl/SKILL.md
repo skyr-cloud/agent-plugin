@@ -183,11 +183,12 @@ let nums: List = .cons(1, .cons(2, .empty))
   shared variant keeps its arity and each slot widens, so `enum { .ok(enum { .x }) }`
   flows into `enum { .ok(enum { .x, .y }), .err }`.
 
-Destructure with `switch` — the elimination form, and the only way to recover a
-payload. It is an **expression** (its type is the join of the arm bodies) and it
-is **total**: the `case`s must cover the subject's static type or the compiler
-errors. The catch-all is `case _:` (there is no `else`); zero cases is valid
-only on an uninhabited subject.
+Destructure with `switch` — the elimination form, and how a payload is recovered
+wherever more than one variant is possible (a binding pattern takes the
+single-variant case; see below). It is an **expression** (its type is the join of
+the arm bodies) and it is **total**: the `case`s must cover the subject's static
+type or the compiler errors. The catch-all is `case _:` (there is no `else`);
+zero cases is valid only on an uninhabited subject.
 
 ```scl
 let describe = fn(s: Status)
