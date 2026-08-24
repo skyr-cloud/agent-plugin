@@ -1258,11 +1258,13 @@ complete. Beyond an uncaught exception, the other way to trip this is
 **exhausting the per-pass resource budget**: each evaluation runs under a
 generous ceiling on work, memory, and wall-clock time (ten seconds by default),
 so a runaway loop or an enormous value (`List.range` over billions, a string
-repeated to gigabytes) fails with an incident naming the limit hit. A fourth
-limit is fixed rather than granted — how deeply the *built-in* higher-order
-functions (`List.map` and its kin) may nest inside one another. A program's own
-functions do not count against it, recursion included, and real configuration
-does not reach it. A budget
+repeated to gigabytes) fails with an incident naming the limit hit. Two further
+limits are fixed rather than granted: how deeply the *built-in* higher-order
+functions (`List.map` and its kin) may nest inside one another, and how deeply a
+single *value* may nest — a list inside a list, a record field holding a record,
+a function closing over a function. A program's own functions do not count
+against the first, recursion included, and real configuration reaches neither; a
+value only nests that far when a function builds it by wrapping it per call. A budget
 failure is *not* an SCL exception — `try`/`catch` cannot intercept it; the fix
 is to bound the work each pass does.
 
