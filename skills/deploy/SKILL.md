@@ -1113,7 +1113,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   flags sensitive is sealed into the vault as the resource's own secret and its
   output carries the Secret Version QID, not the value (so the repo's
   deployment role needs `secret:Write` and `secret:Delete`); a sensitive value
-  of any other shape than a string has no output field at all.
+  of any other shape than a string has no output field at all. An output that
+  echoes back a secret you *supplied* — a connection string built around a
+  password — reads `nil` for the same reason: no output serves secret material.
   (`HashiCorp/Random` is the same machinery wired only into the local dev
   harness.)
 
