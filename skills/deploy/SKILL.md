@@ -1263,8 +1263,9 @@ limits are fixed rather than granted: how deeply the *built-in* higher-order
 functions (`List.map` and its kin) may nest inside one another, and how deeply a
 single *value* may nest — a list inside a list, a record field holding a record,
 a function closing over a function. A program's own functions do not count
-against the first, recursion included, and real configuration reaches neither; a
-value only nests that far when a function builds it by wrapping it per call. A budget
+against the first, recursion included, and real configuration reaches neither:
+the value bound is some forty levels, which a program reaches only by wrapping a
+value per call, never by writing one out. A budget
 failure is *not* an SCL exception — `try`/`catch` cannot intercept it; the fix
 is to bound the work each pass does.
 
