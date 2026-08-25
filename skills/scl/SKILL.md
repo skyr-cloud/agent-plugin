@@ -203,10 +203,17 @@ let head = fn(l: List)
         case .empty: 0
 ```
 
-Patterns (v1): variant `.name(<pat>, …)`, a variable binding, wildcard `_`, and
-`nil` (only on an optional subject — adds the none case to coverage). A variant
-pattern's arity must equal the payload's; ignore a slot with an explicit `_`.
-Patterns may nest and overlap — **first match wins**, top to bottom — and a fully
+Patterns: variant `.name(<pat>, …)`, record `{a, b: <pat>}`, a variable binding,
+wildcard `_`, and `nil` (only on an optional subject — adds the none case to
+coverage). A variant pattern's arity must equal the payload's; ignore a slot
+with an explicit `_`. A **record pattern** instead names only the fields it
+destructures (unnamed fields are simply not read — width subtyping's pattern
+face); the shorthand `{a}` is `{a: a}`, binding the field to its own name, and
+each named field must exist in the subject's record type. A record is one
+constructor, so coverage recurses into the fields: `case {kind: .a}:` +
+`case {kind: .b}:` exhausts `{kind: enum { .a, .b }}`. Both variant and record
+patterns match *through* an optional subject (add `case nil:`). Patterns may
+nest and overlap — **first match wins**, top to bottom — and a fully
 shadowed arm is an unreachable-case error. A top-level binder types at the
 *residual* (the subject minus already-consumed variants). Literals, ranges,
 list/cons patterns, `@`-bindings, and `case … if` guards are **not yet
@@ -219,14 +226,17 @@ annotation following the pattern — a plain name is just the degenerate case:
 type Endpoint enum { .endpoint(Str, Int) }
 let address = fn(.endpoint(host, port): Endpoint) "{host}:{port}"  // no switch needed
 let hostOf = fn(e: Endpoint) let .endpoint(h, _) = e; h
+let nameOf = fn({name}: { name: Str, port: Int }) name             // record apart, no switch
 ```
 
 - **Irrefutable only**: the pattern must cover the type by itself, there being no
-  other arm. A name and `_` always do; a variant pattern only against an enum
-  with that one variant, recursing slotwise; nothing but a name or `_` covers an
-  optional type, `nil` included. Anything else is a compile error naming the
-  uncovered type and pointing at `switch`. This is what lets a one-variant enum —
-  a tagged group of positional fields — come apart without a one-armed `switch`.
+  other arm. A name and `_` always do; a record pattern whenever its field
+  patterns do (shorthand/binder fields always qualify); a variant pattern only
+  against an enum with that one variant, recursing slotwise; nothing but a name
+  or `_` covers an optional type, `nil` included. Anything else is a compile
+  error naming the uncovered type and pointing at `switch`. This is what lets a
+  one-variant enum — a tagged group of positional fields — or any record come
+  apart without a one-armed `switch`.
 - **The judged type** is the annotation, else (parameter) the type context
   expects, else (let) the bound expression's inferred type. A pattern parameter
   in synthesis position still needs its annotation, as any parameter does.
@@ -237,7 +247,8 @@ let hostOf = fn(e: Endpoint) let .endpoint(h, _) = e; h
   `fn(a: Int, a: Str)` is a duplicate-binding error, not shadowing.
 - Destructuring is field extraction, not matching: a pending value hands each
   binder a pending of its own and the body still runs, where a `switch` on it
-  would defer.
+  would defer. A record pattern reads fields as property access does, so an
+  absent optional field hands its binder `nil`.
 - **Module-level `let`/`export let` and a REPL line's own `let` keep a plain-name
   binder** (one export slot, one init-order node); a pattern there is a dedicated
   error telling you to destructure in an inner `let`. The restriction is on the
