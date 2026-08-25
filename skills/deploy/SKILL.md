@@ -1114,7 +1114,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   output carries the Secret Version QID, not the value — and so does the
   provider state Skyr stores, which resolves the reference back on each
   reconcile (so the repo's deployment role needs `secret:View` as well as
-  `secret:Write` and `secret:Delete`, the same three a `Skyr/PKI` key needs);
+  `secret:Write` and `secret:Delete`, the same three a `Skyr/PKI` key needs —
+  a `Read*` data source seals the same way but keeps no state to reconcile
+  from, so it wants only the other two);
   a sensitive value of any other shape than a string has no output field at
   all. An output that
   echoes back a secret you *supplied* — a connection string built around a
