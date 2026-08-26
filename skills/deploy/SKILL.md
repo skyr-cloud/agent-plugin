@@ -339,7 +339,8 @@ shell, so a pipeline is `.command(["/bin/sh", "-c", "a | b"])`, and an empty
 argv is rejected. An argv takes no `.secret(…)` and is stored, logged and
 hashed verbatim — pass credentials through `env`. `workingDirectory: Str?`
 replaces the image's `WORKDIR` and must be an **absolute** path; a tenant
-container's rootfs is **read-only**, so the directory must exist in the image
+container's rootfs is **read-only** (unless it sets `privileged: true` — see
+Privilege under Other capabilities), so the directory must exist in the image
 or be one of its mount paths. Both are part of the pod's identity, so changing
 either recreates the pod.
 
@@ -871,6 +872,24 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   its owning environment, so another repository's volume of the same name is a
   different volume with its own data; mounting one needs `resource:MountVolume`
   on it (see the sharing section above).
+- **Privilege.** A container runs confined by default — a **read-only** root
+  filesystem, the default seccomp profile, and no added Linux capabilities.
+  `privileged: true` on a container drops that confinement for that one
+  container: the full capability set, no seccomp filter, a **writable** root
+  filesystem, and access to the guest's `/dev` — `/dev/kvm` included, so a
+  nested hypervisor (an L3 guest) runs. It is safe to offer because a container
+  is alone in its pod's own VM, so the worst it can reach is that VM, which is
+  already the tenant's; there are no finer knobs (capability lists, sysctls) —
+  the boolean is honest about what it grants. Changing it **recreates** the pod;
+  leaving it out or spelling `false` is exactly the confined default and does
+  not rename or recreate a pod that never asked for privilege. A writable root
+  is scratch space, not storage: root writes land in a guest tmpfs backed by the
+  pod's RAM and **charged to the container's `memory`**, so an overwrite-heavy
+  workload is OOM-killed like any memory-hungry one, and the writable layer has
+  a hard size ceiling the node sets from the machine's memory (an eighth of it,
+  clamped 16–256 MiB) — a write past it fails with `ENOSPC`. That is a different
+  failure mode from the confined default, which answers a root write with
+  `EROFS`. Declare a `Mount` for anything that must persist or grow.
 - **Secrets.** Store sensitive values (passwords, tokens, TLS keys) with the
   `skyr secrets` CLI, then consume them in SCL without any plaintext in git.
   `skyr secrets set <name>` reads the value from piped stdin, a hidden prompt,
