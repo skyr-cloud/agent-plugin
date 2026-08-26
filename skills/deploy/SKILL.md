@@ -428,6 +428,13 @@ stops naming the address or is deleted. Binding needs
 address's region. The pod's firewall still applies: only `public: true` ports
 accept internet traffic on the address.
 
+**Serve public traffic on IPv6.** A pod's public entry point is its IPv6
+address, and a bound `InternetAddress` (public IPv4) is delivered to the pod
+translated to that IPv6. So a workload that must be reachable from the internet
+has to listen on IPv6 — bind `[::]` (or dual-stack), not only `0.0.0.0`. A
+process listening on IPv4 `0.0.0.0` alone will not receive public traffic,
+including traffic to a bound `InternetAddress`.
+
 ### A custom domain
 
 `Skyr/DNS` serves authoritative DNS for user-owned domains:
