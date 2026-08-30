@@ -114,7 +114,7 @@ machine-readable output.
 
 ## The deployment lifecycle
 
-A deployment moves through six states:
+A deployment moves through these states:
 
 - **Proposed** — pushed for approval, not the environment's head, owning no
   resources. Compiled, tested and evaluated against live state on the ordinary
@@ -262,8 +262,9 @@ skyr deployments approve main             # or: reject main
   pending value), and each says which transition it would make — create, update,
   keep, or destroy — with an empty set meaning "not decided", never "nothing
   happens". The plan can be clipped for size or have parts withheld for
-  permission, and while either is true a resource absent from it is **not** one
-  the proposal would leave alone. An empty plan means the pass never got as far
+  permission, and either voids any conclusion drawn from what is **absent**:
+  while one is true, a resource missing from the plan is not one the proposal
+  would leave alone. An empty plan means the pass never got as far
   as evaluating (compile error or failed tests), or found nothing declared, or
   has not reported yet — never "this does nothing".
 - **The verdict does not block the decision.** A proposal that fails its tests or
@@ -277,7 +278,8 @@ skyr deployments approve main             # or: reject main
   pending deployment, prints the commit, what deciding does, the holds and any
   open incident, then makes you type the environment's QID (`--yes` states it up
   front, and is required with no terminal). A newer proposal landing in between
-  makes the decision refuse and name what is pending now. **Both** decisions are
+  makes the decision refuse, saying what became of the one you decided about and
+  to go and read the pending one. **Both** decisions are
   gated, unlike a rollback's restoring outcome, because the operand is somebody
   else's commit and is never in argv.
 - **An environment can be born proposed** — a first push to `deploy/newenv`
