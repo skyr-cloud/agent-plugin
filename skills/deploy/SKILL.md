@@ -2,15 +2,17 @@
 name: deploy
 description: >-
     How deployment to Skyr works: pushing to the skyr git remote, environments
-    and the deployment lifecycle, rolling a deployment back, exposing pods to
+    and the deployment lifecycle, pushing a deployment for approval and
+    approving or rejecting one, rolling a deployment back, exposing pods to
     the internet (ports, InternetAddress, DNS zones), private networking and
     routing between networks, sharing networks, volumes and addresses across
     repositories, first-party plugin capabilities, checking rollout status and
     incidents, and reaching into a running pod (port forwarding, running a
     command or a shell in a container). Use when deploying to Skyr, wiring a
     repository to a Skyr instance, exposing a service publicly, connecting
-    private networks, rolling back a bad deployment, debugging a rollout, or
-    getting a shell inside a deployed container.
+    private networks, protecting an environment behind approval, rolling back a
+    bad deployment, debugging a rollout, or getting a shell inside a deployed
+    container.
 ---
 
 # Deploying to Skyr
@@ -46,6 +48,14 @@ deploys to a different Skyr instance, substitute that instance's host.
   (the `scl` skill covers it). Edges order creation and,
   reversed, teardown: nothing is destroyed while something depending on it is
   still there.
+- **Every branch environment has two refs.** `a` is the environment itself;
+  `deploy/a` is where a deployment is pushed *for approval* — evaluated
+  continuously against live state, applying nothing, until somebody approves it
+  (see the approval section below). `deploy/a` follows `a` whenever nothing is
+  pending, so after a `git fetch skyr` the diff `skyr/a..skyr/deploy/a` is
+  exactly what is under review, and empty when nothing is. Branch names under
+  `deploy/` — and the bare name `deploy` — are reserved and cannot be
+  environments; tags have no proposal ref.
 - Deleting a ref tears the environment down:
   `git push skyr --delete feature-x` destroys everything that environment
   owns, in dependency order.
@@ -104,10 +114,18 @@ machine-readable output.
 
 ## The deployment lifecycle
 
-A deployment moves through five states:
+A deployment moves through six states:
 
+- **Proposed** — pushed for approval, not the environment's head, owning no
+  resources. Compiled, tested and evaluated against live state on the ordinary
+  cadence, but every effect it works out is recorded as a *plan* for a reviewer
+  instead of being applied: nothing is created, updated, adopted or destroyed
+  while a deployment is Proposed. One per environment. It leaves the state either
+  by being approved — the same deployment becomes Desired — or by being discarded
+  straight to Down, since it owns nothing to tear down. Listed as `PROPOSED`,
+  held on somebody's decision. See the approval section below.
 - **Desired** — actively reconciled: evaluate config, create/update/adopt
-  resources. New deployments start here.
+  resources. Most deployments start here.
 - **Up** — converged *and* every resource is non-volatile; Skyr stops
   re-evaluating until the next push.
 - **Lingering** — superseded by a newer push; waits while the new deployment
@@ -199,6 +217,79 @@ normal operation, not a stuck rollout:
 
 A deployment of only stable resources (keys, random values, artifacts,
 images) settles into Up.
+
+## Pushing for approval
+
+A push to `deploy/<env>` proposes a deployment instead of deploying one: the
+environment's head does not move, and the proposal is evaluated continuously —
+same compile, same test gate, same reads of live resource state — recording what
+it *would* do rather than doing it. Approving promotes that same deployment.
+
+```sh
+git push skyr HEAD:deploy/main            # propose
+git fetch skyr                            # then, the change under review:
+git diff skyr/main..skyr/deploy/main
+git push skyr :deploy/main                # withdraw it
+skyr deployments approve main             # or: reject main
+```
+
+- **Two verbs, and neither implies the other.**
+  `environment:PushForApproval` on the environment gates any push to
+  `deploy/<env>`, withdrawal included — deliberately *not* `environment:Delete`,
+  since nothing real is deleted. `environment:ApproveDeployment` gates both
+  approving and rejecting, and implies neither push nor delete authority.
+  A first push through `deploy/…` into an environment that does not exist yet
+  pairs its verb with `environment:Create`, as a first direct push does.
+- **Protection is IAM, not a setting.** There is no protected-environment flag
+  and nothing badges one. An org protects `prod-*` by granting
+  `environment:Push` on `acme/shop::prod-*` to nobody (or one release role) while
+  granting `PushForApproval` broadly, and `ApproveDeployment` to reviewers.
+  Grants only add — there are no deny rules — so a wildcard `environment:Push` on
+  `acme/shop::*` elsewhere undoes it, and the verb matcher `environment:Push*`
+  grants *both* verbs. `Super` bypasses all policy and can always push directly;
+  the expressible posture is narrow day-to-day roles plus `role:Assume` for the
+  wide one. Self-approval is allowed — four eyes means not granting both verbs to
+  one role. Note that `PushForApproval` is not read-only: a proposer's objects
+  are unpacked into the repository's object store even if the proposal is never
+  approved.
+- **What discards a pending proposal**: any promotion of the head (a direct push,
+  the API's deploy/commit mutations, a rollback, or the approval itself), a newer
+  proposal, a rejection, a withdrawal, and deleting the environment — provided
+  that deletion actually retires a deployment. Discarding goes straight to Down;
+  a proposal owns nothing to tear down.
+- **The review surface.** The proposal's resource graph is the plan: nodes are
+  *certain* (what approving does) or merely *possible* (a region fenced behind a
+  pending value), and each says which transition it would make — create, update,
+  keep, or destroy — with an empty set meaning "not decided", never "nothing
+  happens". The plan can be clipped for size or have parts withheld for
+  permission, and while either is true a resource absent from it is **not** one
+  the proposal would leave alone. An empty plan means the pass never got as far
+  as evaluating (compile error or failed tests), or found nothing declared, or
+  has not reported yet — never "this does nothing".
+- **The verdict does not block the decision.** A proposal that fails its tests or
+  does not compile opens the usual `TestFailure`/`BadConfiguration` incident and
+  can still be approved; approving clears none of it. That is safe because
+  approval skips nothing — the promoted deployment runs the same gate again, and
+  a commit whose tests fail materializes nothing while the predecessor keeps
+  serving. Read the verdict anyway: approving a failing proposal buys a held
+  rollout.
+- **Decisions bind to one exact deployment.** The CLI resolves the environment's
+  pending deployment, prints the commit, what deciding does, the holds and any
+  open incident, then makes you type the environment's QID (`--yes` states it up
+  front, and is required with no terminal). A newer proposal landing in between
+  makes the decision refuse and name what is pending now. **Both** decisions are
+  gated, unlike a rollback's restoring outcome, because the operand is somebody
+  else's commit and is never in argv.
+- **An environment can be born proposed** — a first push to `deploy/newenv`
+  gives it a `deploy/newenv` ref, no head, and nothing running. It exists (it is
+  listed, it has a page) but has no current deployment. Clearing it takes a
+  withdrawal, a rejection, or an API teardown: there is no `newenv` ref for
+  `git push skyr :newenv` to delete, and a deletion that retires no deployment
+  discards no review, so `environment:Delete` alone cannot clear it over Git.
+- **Nobody is notified.** A waiting review is found by looking — the
+  environment's page, or `skyr deployments list`, where a proposal is an ordinary
+  row in state `PROPOSED` with its hold (its `RESTORES` cell is blank: rollback
+  lineage is recorded at promotion, and a proposal cannot be rolled back).
 
 ## Rolling back
 
