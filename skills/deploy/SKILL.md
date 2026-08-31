@@ -264,9 +264,43 @@ skyr deployments approve main             # or: reject main
   happens". The plan can be clipped for size or have parts withheld for
   permission, and either voids any conclusion drawn from what is **absent**:
   while one is true, a resource missing from the plan is not one the proposal
-  would leave alone. An empty plan means the pass never got as far
-  as evaluating (compile error or failed tests), or found nothing declared, or
-  has not reported yet — never "this does nothing".
+  would leave alone. An empty plan means the pass never got as far as evaluating
+  (compile error or failed tests), or has not reported yet, or the configuration
+  declares nothing and there is nothing live for approving to strand — never
+  "this does nothing".
+- **The plan also says what approving would delete.** A promoted deployment
+  adopts what it declares and nothing else, and whatever the deployment it
+  replaces still owns is torn down behind it — so the plan draws every resource
+  the environment holds now that the proposed configuration names nowhere, as
+  the resource it is with a **destroy** on it. That is deletion by *absence*, and
+  which kind of node carries the destroy is what tells the two apart: on a
+  declaration it is one the configuration asked for, on an existing resource it
+  is the opposite — nothing asks for it, and the deletion is the whole of what
+  the plan's silence about it amounts to. The review counts them apart from
+  declared destroys and hedges the unsure ones ("to delete", "may be deleted"),
+  and draws them in the graph with their dependency edges, so a doomed subtree
+  hanging off a resource that stays reads as one.
+- **A deletion is certain only when the plan is whole.** Nothing about the
+  resource can make the reading surer — it is named by nothing — so what decides
+  it is whether the plan is in a position to be silent: nothing clipped for
+  size, no region left unexplored, every declaration in it settling which
+  resource it is about. Anything less hedges every deletion, because what the
+  plan does not spell out could turn out to be that very resource and keep it.
+  A configuration declaring **nothing at all** is the extreme: it reads as the
+  whole environment marked for deletion, the most destructive approval there is
+  — but only where the last report succeeded and is at least as recent as the
+  plan, which is what keeps the equally empty plan a failed pass leaves behind
+  from ever reading that way. Until a report vouches for it, an empty
+  configuration shows as "no declarations" with no teardown on it; the next pass
+  settles it.
+- **What the deletions leave out.** **Sticky** resources are never among them:
+  they are marked to outlive whoever declared them (`Artifact.File` is one), so
+  being left unnamed is no fate for them. And the set is a floor on both
+  surfaces, the counts and the graph alike — it is filtered by your
+  `resource:View` one resource at a time, and one you may not see is dropped
+  with **no flag saying so**, since that it exists at all is exactly what a
+  denial withholds. The plan's "parts were withheld" warning is about what the
+  plan *names*; its absence promises nothing about the deletions being complete.
 - **The verdict does not block the decision.** A proposal that fails its tests or
   does not compile opens the usual `TestFailure`/`BadConfiguration` incident and
   can still be approved; approving clears none of it. That is safe because
