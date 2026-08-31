@@ -280,27 +280,31 @@ skyr deployments approve main             # or: reject main
   declared destroys and hedges the unsure ones ("to delete", "may be deleted"),
   and draws them in the graph with their dependency edges, so a doomed subtree
   hanging off a resource that stays reads as one.
-- **A deletion is certain only when the plan is whole.** Nothing about the
-  resource can make the reading surer — it is named by nothing — so what decides
-  it is whether the plan is in a position to be silent: nothing clipped for
-  size, no region left unexplored, every declaration in it settling which
-  resource it is about. Anything less hedges every deletion, because what the
-  plan does not spell out could turn out to be that very resource and keep it.
-  A configuration declaring **nothing at all** is the extreme: it reads as the
+- **A deletion is certain only where the plan can be believed silent.** No
+  declaration names the resource, so the reading is decided by the plan — and,
+  in one case, by the resource's own type: nothing clipped for size, no region
+  left unexplored, and every declaration whose name is still unsettled ruled out
+  by its type. Clipping or an unexplored region hedges *every* deletion; an
+  unsettled name hedges only the resources whose type it could still turn out to
+  name, so certain and hedged deletions sit side by side in one plan. A
+  configuration declaring **nothing at all** is the extreme: it reads as the
   whole environment marked for deletion, the most destructive approval there is
   — but only where the last report succeeded and is at least as recent as the
   plan, which is what keeps the equally empty plan a failed pass leaves behind
-  from ever reading that way. Until a report vouches for it, an empty
-  configuration shows as "no declarations" with no teardown on it; the next pass
-  settles it.
+  from ever reading that way. A vouching report can lag by a pass, and in that
+  window the same configuration shows as "No declarations" with no teardown on
+  it; the next pass settles the vouching. And a plan that could not be read at
+  all arrives empty *and* clipped, which is neither of those: it strands
+  nothing, and is reported as clipped rather than as declaring anything.
 - **What the deletions leave out.** **Sticky** resources are never among them:
   they are marked to outlive whoever declared them (`Artifact.File` is one), so
   being left unnamed is no fate for them. And the set is a floor on both
   surfaces, the counts and the graph alike — it is filtered by your
   `resource:View` one resource at a time, and one you may not see is dropped
   with **no flag saying so**, since that it exists at all is exactly what a
-  denial withholds. The plan's "parts were withheld" warning is about what the
-  plan *names*; its absence promises nothing about the deletions being complete.
+  denial withholds. The review's warning that part of the plan names resources
+  you may not see is about what the plan *names*; its absence promises nothing
+  about the deletions being complete.
 - **The verdict does not block the decision.** A proposal that fails its tests or
   does not compile opens the usual `TestFailure`/`BadConfiguration` incident and
   can still be approved; approving clears none of it. That is safe because
