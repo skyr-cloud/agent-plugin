@@ -1029,8 +1029,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   failure mode from the confined default, which answers a root write with
   `EROFS`. Declare a `Mount` for anything that must persist or grow.
 - **Secrets.** Store sensitive values (passwords, tokens, TLS keys) with the
-  `skyr secrets` CLI or the web's Secrets pages, then consume them in SCL
-  without any plaintext in git.
+  `skyr secrets` CLI or the web's Secrets pages, then consume them in SCL with
+  no plaintext in git.
   `skyr secrets set <name>` reads the value from piped stdin, a hidden prompt,
   or `--from-file` — never an argument, so it stays out of shell history;
   `skyr secrets list` shows metadata only (never values); `skyr secrets delete`
@@ -1049,7 +1049,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   repository scope alone (bare `secrets list`), an environment's **Secrets**
   tab is that environment's inventory. Both reveal per row and carry
   **Set secret** / per-row **Set new value** / **Delete**. A new secret set
-  from an environment tab picks its scope — "Override for <env>" (default) or
+  from an environment tab picks its scope — `Override for <env>` (default) or
   "Repository (all environments)"; the repo page has no choice, and an existing
   row always acts at its **own** scope (rotating a repo row from an env tab
   warns that it reaches every environment). Values are typed
@@ -1077,10 +1077,10 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   no narrower "metadata only" grant, so a wildcard `secret:View` over a repo
   is an export grant for every value in it — including keys resources
   generated — and anyone who can `assumeRole` into that deployment role has
-  it too. **Rotation** (`skyr secrets
-  set` again, or **Set new value** on a web row) takes effect on the next
-  deployment, and how depends on where the secret is consumed: in `env` the pinned version is part of the pod's identity,
-  so the pod is **recreated**; in a read-only volume seed the content is
+  it too. **Rotation** (`skyr secrets set` again, or **Set new value** on a
+  web row) takes effect on the next deployment, and how depends on where the
+  secret is consumed: in `env` the pinned version is part of the pod's
+  identity, so the pod is **recreated**; in a read-only volume seed the content is
   identity-excluded, so the new plaintext is written into the running pod **with
   no restart** — except when it outgrows the pod's disk claim, and except for a
   writable mount's seed, both of which recreate. Live delivery is not atomic and
@@ -1485,7 +1485,7 @@ curl -s https://skyr.foo/~docs/resources.md          # what every resource does:
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
 curl -s https://skyr.foo/~docs/networking.md         # private networks, routers, ACLs, internal DNS, the DMZ pattern
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
-curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI, consumption, IAM
+curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI and web, consumption, IAM
 curl -s https://skyr.foo/~docs/knobs.md              # knobs: the four types, awaiting-input gating, skyr knobs CLI
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/cross-repo-imports.md # depending on another repo, and sharing resources with one
