@@ -1029,7 +1029,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   failure mode from the confined default, which answers a root write with
   `EROFS`. Declare a `Mount` for anything that must persist or grow.
 - **Secrets.** Store sensitive values (passwords, tokens, TLS keys) with the
-  `skyr secrets` CLI, then consume them in SCL without any plaintext in git.
+  `skyr secrets` CLI or the web's Secrets pages, then consume them in SCL
+  without any plaintext in git.
   `skyr secrets set <name>` reads the value from piped stdin, a hidden prompt,
   or `--from-file` — never an argument, so it stays out of shell history;
   `skyr secrets list` shows metadata only (never values); `skyr secrets delete`
@@ -1043,8 +1044,19 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   one **value** to stdout (raw bytes, no trailing newline) for a caller
   holding `secret:View` on it — `--encoding openssh` converts a generated
   ed25519 PKCS#8 key, and a value with control characters is refused on a
-  terminal, so redirect it. The web equivalent is the environment's Secrets
-  tab, with a per-row reveal. In config, read them
+  terminal, so redirect it. The web does everything but the encodings, on
+  two pages: a repo's **Secrets** page (sidebar, below Settings) is the
+  repository scope alone (bare `secrets list`), an environment's **Secrets**
+  tab is that environment's inventory. Both reveal per row and carry
+  **Set secret** / per-row **Set new value** / **Delete**. A new secret set
+  from an environment tab picks its scope — "Override for <env>" (default) or
+  "Repository (all environments)"; the repo page has no choice, and an existing
+  row always acts at its **own** scope (rotating a repo row from an env tab
+  warns that it reaches every environment). Values are typed
+  (one trailing newline stripped, like piped stdin) or read from a file
+  (bytes verbatim, the only way to set binary/TLS material from a browser);
+  kebab-case name and 64 KiB checked client-side. Resource-owned rows are
+  read-only there as everywhere. In config, read them
   via `Std/Secret`: `Secret.get(name).qid` is an opaque reference. Everywhere a
   value may be sensitive it is written `.literal("…")` (a plain value) or
   `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`. Two places
@@ -1066,8 +1078,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   is an export grant for every value in it — including keys resources
   generated — and anyone who can `assumeRole` into that deployment role has
   it too. **Rotation** (`skyr secrets
-  set` again) takes effect on the next deployment, and how depends on where the
-  secret is consumed: in `env` the pinned version is part of the pod's identity,
+  set` again, or **Set new value** on a web row) takes effect on the next
+  deployment, and how depends on where the secret is consumed: in `env` the pinned version is part of the pod's identity,
   so the pod is **recreated**; in a read-only volume seed the content is
   identity-excluded, so the new plaintext is written into the running pod **with
   no restart** — except when it outgrows the pod's disk claim, and except for a
