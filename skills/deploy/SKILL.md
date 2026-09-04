@@ -6,13 +6,14 @@ description: >-
     approving or rejecting one, rolling a deployment back, exposing pods to
     the internet (ports, InternetAddress, DNS zones), private networking and
     routing between networks, sharing networks, volumes and addresses across
-    repositories, first-party plugin capabilities, checking rollout status and
-    incidents, and reaching into a running pod (port forwarding, running a
+    repositories, first-party plugin capabilities, approving the held deletion
+    of a durable resource such as a persistent volume, checking rollout status
+    and incidents, and reaching into a running pod (port forwarding, running a
     command or a shell in a container). Use when deploying to Skyr, wiring a
     repository to a Skyr instance, exposing a service publicly, connecting
     private networks, protecting an environment behind approval, rolling back a
-    bad deployment, debugging a rollout, or getting a shell inside a deployed
-    container.
+    bad deployment, approving a deletion a teardown is waiting on, debugging a
+    rollout, or getting a shell inside a deployed container.
 ---
 
 # Deploying to Skyr
@@ -58,7 +59,10 @@ deploys to a different Skyr instance, substitute that instance's host.
   environments; tags have no proposal ref.
 - Deleting a ref tears the environment down:
   `git push skyr --delete feature-x` destroys everything that environment
-  owns, in dependency order.
+  owns, in dependency order. A **durable** resource — `PersistentVolume` is the
+  first-party one — is the exception: its destruction is *held* until a person
+  approves that particular deletion, and the teardown does not finish until
+  somebody does (see "Durable resources: deletion waits for a person").
 - **Rolling back is a first-class operation**, not a git manoeuvre: every
   deployment records which one preceded it, and `skyr deployments rollback <env>`
   redeploys that predecessor's commit as a *new* deployment. A deployment with
@@ -191,7 +195,9 @@ A deployment moves through these states:
   rollout that is not converging with only waiting lines in the log is that
   case; read the program rather than waiting for a warning.
 - **Undesired** — teardown: resources not adopted by the successor are
-  destroyed in dependency order.
+  destroyed in dependency order. A **durable** resource holds this short of
+  Down: its destroy waits for a person to approve it, and the deployment
+  carries a hold saying so while everything else comes down around it.
 - **Down** — nothing left; terminal.
 
 **A commit's own tests run before anything is applied.** When the repository
@@ -298,9 +304,12 @@ skyr deployments approve main             # or: reject main
   nothing, and is reported as clipped rather than as declaring anything.
 - **What the deletions leave out.** **Sticky** resources are never among them:
   they are marked to outlive whoever declared them (`Artifact.File` is one), so
-  being left unnamed is no fate for them. And the set is a floor on both
-  surfaces, the counts and the graph alike — it is filtered by your
-  `resource:View` one resource at a time, and one you may not see is dropped
+  being left unnamed is no fate for them. A **durable** resource *is* named, but
+  approving the deployment does not destroy it: the destroy that follows is held
+  for an approval of its own (see "Durable resources: deletion waits for a
+  person"). And the set is a floor on both surfaces, the counts and the graph
+  alike — it is filtered by your `resource:View` one resource at a time, and one
+  you may not see is dropped
   with **no flag saying so**, since that it exists at all is exactly what a
   denial withholds. The review's warning that part of the plan names resources
   you may not see is about what the plan *names*; its absence promises nothing
@@ -330,6 +339,58 @@ skyr deployments approve main             # or: reject main
   environment's page, or `skyr deployments list`, where a proposal is an ordinary
   row in state `PROPOSED` with its hold (its `RESTORES` cell is blank: rollback
   lineage is recorded at promotion, and a proposal cannot be rolled back).
+
+## Durable resources: deletion waits for a person
+
+Some resources hold data nothing in a configuration can put back, and those are
+**durable**: Skyr never destroys one on a reconcile pass's own authority.
+`Container.PersistentVolume` is the first-party durable type — its contents are
+the volume. Durability is a per-resource marker, answered on every transition
+like volatility and stickiness, so it is a fact about the resource rather than
+about its type, and `skyr resources list` is where to read it (a `DELETION`
+column, `PENDING` or `APPROVED`; `--format json` carries a `deletion_approval`
+object).
+
+- **What a held destroy looks like.** The first `Destroy` — from a teardown, from
+  dropping the declaration, or from `skyr resources delete` — is recorded as a
+  *request* and stops there. Nothing is destroyed, the resource's log says
+  `Awaiting approval to destroy`, and everybody whose role may approve it is
+  notified. The deployment behind it keeps re-asking every pass and carries a
+  **hold** — `skyr deployments list` counts it in `HELD` and spells it out
+  ("Waiting for the deletion of `<resource>` to be approved …"), and the
+  deployment page shows it under Health. That hold is why an Undesired
+  deployment sits without reaching Down; it is not a failure and opens no
+  incident.
+- **How to approve it.**
+
+  ```sh
+  skyr resources approve-deletion stockholm:Skyr/Container.PersistentVolume:data
+  skyr resources approve-deletion Skyr/Container.PersistentVolume:data --yes
+  ```
+
+  It prints what is held (resource, environment, when it was first held, the
+  declaring deployment) and makes you type the resource's **full QID** back;
+  `--yes` states that up front and is **required** with no terminal. It refuses,
+  sending nothing, when the resource is not there, when nothing is awaiting
+  approval, and when the deletion was already approved — naming that first
+  approver and when. The web has the same decision on the resource page and on
+  the resource list; the API is `approveResourceDeletion(resource: <QID>)`.
+- **Approving and deleting are separate permissions.** Approving needs
+  `resource:ApproveDeletion` on the resource; it lifts the hold and destroys
+  nothing, and it implies no `resource:Delete`. So `skyr resources delete` on a
+  durable resource has to be **run again after approval** — the first run only
+  requested it, the second one carries it out under the delete permission. (The
+  web does that second call for you when the approver holds both; the CLI does
+  not.) An approval cannot be taken back, and it is recorded — the tombstone
+  says who approved the deletion and when.
+- **Withdrawing is declaring it again.** Any non-destroy transition — create,
+  update, adopt, check — clears the request, approved or not, so pushing a
+  configuration that still declares the resource is how to keep it. A later
+  destroy needs a fresh approval; the cleared one is not redeemable.
+- **It still works during a repo or org deletion.** `resource:ApproveDeletion`
+  is in the delete family, so the freeze a `deleting` entity is under lets it
+  through — otherwise the cascade would wait forever on a decision nobody was
+  allowed to make. It is never grantable to `Anonymous`.
 
 ## Rolling back
 
@@ -1009,7 +1070,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   writable mount's seed. A persistent volume's identity includes
   its owning environment, so another repository's volume of the same name is a
   different volume with its own data; mounting one needs `resource:MountVolume`
-  on it (see the sharing section above).
+  on it (see the sharing section above). A persistent volume is also **durable**:
+  destroying it is held until somebody approves that deletion — see "Durable
+  resources: deletion waits for a person".
 - **Privilege.** A container runs confined by default — a **read-only** root
   filesystem, the default seccomp profile, and no added Linux capabilities.
   `privileged: true` on a container drops that confinement for that one
@@ -1301,10 +1364,11 @@ reference — look them up rather than guessing (see below).
 ```sh
 skyr deployments list             # states + rollback provenance of this repo's deployments
 skyr deployments logs --follow    # stream deployment progress in real time
-skyr resources list               # resources in the current env
+skyr resources list               # resources in the current env (DELETION column)
 skyr resources list --env staging
 skyr resources logs Skyr/Container.Pod:web
 skyr resources logs -f stockholm:Skyr/Container.Pod:web
+skyr resources approve-deletion Skyr/Container.PersistentVolume:data
 ```
 
 A rollout is done when the deployment reports converged — state `Up`, or
