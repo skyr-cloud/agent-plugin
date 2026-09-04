@@ -347,7 +347,11 @@ Some resources hold data nothing in a configuration can put back, and those are
 `Container.PersistentVolume` is the first-party durable type — its contents are
 the volume. Durability is a per-resource marker, answered on every transition
 like volatility and stickiness, so it is a fact about the resource rather than
-about its type; the web shows it as a marker on the resource. `skyr resources
+about its type; the web shows it as a marker on the resource. A volume that
+should not be held that way declares `deletionProtection: false`, and is then
+destroyed like any other resource; flipping the field is an ordinary in-place
+update that leaves the data alone and, like every update, withdraws a request
+already waiting on the volume. `skyr resources
 list` carries no durability marker — what it shows is where a deletion has got
 to: a `DELETION` column reading `PENDING` or `APPROVED`, empty for a resource
 holding none (`--format json` carries a `deletion_approval` object).
