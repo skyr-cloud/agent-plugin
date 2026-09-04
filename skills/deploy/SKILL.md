@@ -347,20 +347,25 @@ Some resources hold data nothing in a configuration can put back, and those are
 `Container.PersistentVolume` is the first-party durable type — its contents are
 the volume. Durability is a per-resource marker, answered on every transition
 like volatility and stickiness, so it is a fact about the resource rather than
-about its type, and `skyr resources list` is where to read it (a `DELETION`
-column, `PENDING` or `APPROVED`; `--format json` carries a `deletion_approval`
-object).
+about its type; the web shows it as a marker on the resource. `skyr resources
+list` carries no durability marker — what it shows is where a deletion has got
+to: a `DELETION` column reading `PENDING` or `APPROVED`, empty for a resource
+holding none (`--format json` carries a `deletion_approval` object).
 
 - **What a held destroy looks like.** The first `Destroy` — from a teardown, from
   dropping the declaration, or from `skyr resources delete` — is recorded as a
   *request* and stops there. Nothing is destroyed, the resource's log says
   `Awaiting approval to destroy`, and everybody whose role may approve it is
-  notified. The deployment behind it keeps re-asking every pass and carries a
-  **hold** — `skyr deployments list` counts it in `HELD` and spells it out
-  ("Waiting for the deletion of `<resource>` to be approved …"), and the
+  notified. Where the destroy came from a deployment — a teardown, or a program
+  that dropped the declaration — that deployment keeps re-asking every pass and
+  carries a **hold**: `skyr deployments list` counts it in `HELD` and spells it
+  out ("Waiting for the deletion of `<resource>` to be approved …"), and the
   deployment page shows it under Health. That hold is why an Undesired
   deployment sits without reaching Down; it is not a failure and opens no
-  incident.
+  incident. A `skyr resources delete` of a resource its deployment still
+  declares is one request rather than a standing one — nothing re-asks for it
+  and no hold is reported — but the request stands until somebody approves it or
+  the resource is reconciled again.
 - **How to approve it.**
 
   ```sh
@@ -381,12 +386,16 @@ object).
   durable resource has to be **run again after approval** — the first run only
   requested it, the second one carries it out under the delete permission. (The
   web does that second call for you when the approver holds both; the CLI does
-  not.) An approval cannot be taken back, and it is recorded — the tombstone
+  not.) An approval is recorded once and never re-stamped — a second approver is
+  told who decided it and when — and it outlives what it released: the tombstone
   says who approved the deletion and when.
 - **Withdrawing is declaring it again.** Any non-destroy transition — create,
   update, adopt, check — clears the request, approved or not, so pushing a
-  configuration that still declares the resource is how to keep it. A later
-  destroy needs a fresh approval; the cleared one is not redeemable.
+  configuration that still declares the resource is how to keep it. A deployment
+  merely continuing to run withdraws nothing: an unchanged, non-volatile
+  resource is given no transition at all, so it takes a push or a changed
+  declaration. A later destroy needs a fresh approval; the cleared one is not
+  redeemable.
 - **It still works during a repo or org deletion.** `resource:ApproveDeletion`
   is in the delete family, so the freeze a `deleting` entity is under lets it
   through — otherwise the cascade would wait forever on a decision nobody was
