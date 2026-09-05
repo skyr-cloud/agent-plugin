@@ -1217,7 +1217,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   is held for approval. Header/query/form values are `.literal("…")` or
   `.secret(qid)` (secrets may also sit inside a `.json` body); plaintext never
   enters SCL, the stored inputs or the logs. Resolution needs `secret:View` on
-  the consumed secret like every other consumer (see Secrets below), a
+  the consumed secret like every other consumer (see Secrets above), a
   credential the API echoes back is stored and quoted as `<redacted>`, and
   `skyr run` — which resolves no plaintext at all — refuses a request that names
   one instead of sending it without. A prior-independent `create` +
