@@ -1136,11 +1136,14 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   read-only there as everywhere. In config, read them
   via `Std/Secret`: `Secret.get(name).qid` is an opaque reference. Everywhere a
   value may be sensitive it is written `.literal("…")` (a plain value) or
-  `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`. Two places
-  take such values: a pod's or a container's `env`, and an ephemeral volume's
+  `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`. Three places
+  take such values: a pod's or a container's `env`; an ephemeral volume's
   `files` seed, mounted into the containers that need it (the only route for a
-  value that can't be an env var — TLS keys, keytabs, anything binary). The
-  plaintext is resolved inside the platform at pod materialization and never
+  value that can't be an env var — TLS keys, keytabs, anything binary); and an
+  `HTTP.Resource` request's header, query and form values, plus any depth of a
+  `.json` body. The
+  plaintext is resolved inside the platform at pod materialization — or, for a
+  request, immediately before it is sent — and never
   enters git, the stored resource inputs, or any log; a volume seeded with any
   secret is mounted owner-only (`0700`/`0600`, overridable with an explicit
   `permissions`) under the mount's `userId`/`groupId`, root by default.
@@ -1213,7 +1216,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   leaves the resource durable until it is stored, so a teardown in that window
   is held for approval. Header/query/form values are `.literal("…")` or
   `.secret(qid)` (secrets may also sit inside a `.json` body); plaintext never
-  enters SCL, the stored inputs or the logs. A prior-independent `create` +
+  enters SCL, the stored inputs or the logs. Resolution needs `secret:View` on
+  the consumed secret like every other consumer (see Secrets below), a
+  credential the API echoes back is stored and quoted as `<redacted>`, and
+  `skyr run` — which resolves no plaintext at all — refuses a request that names
+  one instead of sending it without. A prior-independent `create` +
   `check` that just GET the same URL is the fetch-a-document shape. Hosted
   deployments reach public destinations only: `http`/`https` URLs, with
   requests to loopback/private/link-local addresses refused (including
