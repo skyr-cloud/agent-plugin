@@ -216,8 +216,9 @@ test code is unaffected.
 Two things legitimately keep a deployment in **Desired forever** — that is
 normal operation, not a stuck rollout:
 
-- Any **volatile resource** (a `Container.Pod`, `DNS.Zone`, or `HTTP.Get`
-  represents external state that can drift, so Skyr keeps reconciling).
+- Any **volatile resource** (a `Container.Pod`, `DNS.Zone`, or an
+  `HTTP.Resource` with a `check` represents external state that can drift, so
+  Skyr keeps reconciling).
 - A **branch or tag pin** in `Package.scle` dependencies: the deployment
   keeps following the foreign ref. Pin commit hashes to settle.
 
@@ -1196,14 +1197,29 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 - **`Artifact.File({ name, contents, mediaType })`** stores a file and
   returns a time-limited download `url` — useful for exposing generated
   config, reports, or deployment metadata.
-- **`HTTP.Get({ url, headers })`** performs a GET as a resource (volatile;
-  re-performed on input changes) and outputs `status`, `body`, `headers` —
-  a probe or a way to pull external data into the config. Hosted deployments
-  fetch public destinations only: `http`/`https` URLs, with requests to
-  loopback/private/link-local addresses refused (including hostnames or
-  redirect hops resolving to them); requests time out after 30s and the
-  response is capped at 4 MiB. `skyr run` applies no address restrictions,
-  so probing `localhost` locally keeps working.
+- **`HTTP.Resource({ name, state?, create?, check?, update?, delete? })`**
+  manages anything an HTTP API exposes: one request per lifecycle transition,
+  each transition's response back as `created`/`checked`/`updated`. `create`
+  is a literal `HTTP.Request`; the other three are
+  `fn(HTTP.Responses?) HTTP.Request?` thunks called with what the resource
+  already stored, so a request can be addressed by the id the create response
+  carried — they return `nil` until one exists, and the pass after the create
+  stores them. A stored `check` makes the resource volatile, re-sent every
+  `checkInterval` (1 min default, 5 s floor); a `vanished` status (`[404]` by
+  default) means the remote resource is gone and Skyr rebuilds it. `update` is
+  sent when, and only when, the value `state` renders to changes — fold what a
+  check observed into `state` to repair remote drift, never an `ETag`-style
+  marker or the updates never stop. A `delete` that needs the create response
+  leaves the resource durable until it is stored, so a teardown in that window
+  is held for approval. Header/query/form values are `.literal("…")` or
+  `.secret(qid)` (secrets may also sit inside a `.json` body); plaintext never
+  enters SCL, the stored inputs or the logs. A prior-independent `create` +
+  `check` that just GET the same URL is the fetch-a-document shape. Hosted
+  deployments reach public destinations only: `http`/`https` URLs, with
+  requests to loopback/private/link-local addresses refused (including
+  hostnames or redirect hops resolving to them); requests time out after 30s
+  and the stored responses are capped at 4 MiB together. `skyr run` applies no
+  address restrictions, so probing `localhost` locally keeps working.
 - **`PKI.*`** — `ED25519PrivateKey`/`ECDSAPrivateKey`/`RSAPrivateKey`,
   `CertificationRequest`, `CertificateSignature`: build self-managed
   certificate chains (CAs, client certs, internal TLS) entirely in-config.
