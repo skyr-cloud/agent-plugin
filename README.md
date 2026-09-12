@@ -4,14 +4,16 @@ A cross-tool agent plugin for [Skyr](https://skyr.cloud), the Git-native
 infrastructure orchestrator. It bundles agent skills that help you author and
 operate Skyr configuration written in the Skyr Configuration Language (SCL).
 
-The plugin is compatible with both [Claude Code](https://code.claude.com) and
-[Codex](https://developers.openai.com/codex) plugin formats, and its skills
+The plugin follows the [Agent Plugins](https://agent-plugins.org/) standard
+and also includes manifests for [Claude Code](https://code.claude.com) and
+[Codex](https://developers.openai.com/codex). Its skills
 follow the cross-tool [Agent Skills](https://code.claude.com/docs/en/skills)
 standard.
 
 ## Layout
 
 ```
+plugin.json                       # Portable Agent Plugins manifest
 .claude-plugin/plugin.json        # Claude Code plugin manifest
 .claude-plugin/marketplace.json   # Claude Code marketplace catalog (self-cataloging)
 .codex-plugin/plugin.json         # Codex manifest (same content as the Claude Code one)
