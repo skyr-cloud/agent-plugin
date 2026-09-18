@@ -1240,14 +1240,20 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   imperative steps and renews with no gap.
 - **`Random.*`** — values drawn once and then stable across deploys, redrawn
   only when an input changes. `Int({ name, min, max })` takes optional bounds,
-  defaulting to `0` and `4294967295` (2^32 - 1). `Adjective({ name })` and
+  defaulting to `0` and `4294967295` (2^32 - 1); state *both* to draw from a
+  range outside those, since a single bound contradicting the other's default
+  raises rather than silently swapping the two. It is a range for identifiers,
+  not a secret — use `Password` for anything that must resist guessing.
+  `Adjective({ name })` and
   `Noun({ name })` draw a word from a built-in dictionary, for names a human
   reads (`"{adjective.result}-{noun.result}"` → `brave-otter`); having no
   inputs, neither ever redraws. `Password({ name, length, special })` generates
   a password and **seals it into the vault** — its `result` is the sealed
   value's Secret Version QID, never the password, so pass it wherever a secret
   reference is accepted (a container `.secret(...)` value) and grant the owning
-  repo `secret:Write` and `secret:Delete` on it. `length` defaults to 32 and
+  repo `secret:Write` and `secret:Delete` on it — plus `secret:View` on the
+  same object for whatever consumes the password, or the seal succeeds and the
+  consumer fails later. `length` defaults to 32 and
   `special` to `.allow(["-", "_", "!", "@", "#", "+", "/"])`; `.disallow` means
   letters and digits only. A `length` outside 1–1024, or a `special` entry that
   is not a single character, raises `Random.InvalidRandomInput` at evaluation
