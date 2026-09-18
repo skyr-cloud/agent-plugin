@@ -1238,8 +1238,20 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `Skyr/DNS`, does wildcards) and `HTTP01Certificate` (you serve the token)
   sub-constructors; Skyr drives order → challenge → issue → renew with no
   imperative steps and renews with no gap.
-- **`Random.Int({ name, min, max })`** — a random value minted once and then
-  stable across deploys.
+- **`Random.*`** — values drawn once and then stable across deploys, redrawn
+  only when an input changes. `Int({ name, min, max })` takes optional bounds,
+  defaulting to `0` and `4294967295` (2^32 - 1). `Adjective({ name })` and
+  `Noun({ name })` draw a word from a built-in dictionary, for names a human
+  reads (`"{adjective.result}-{noun.result}"` → `brave-otter`); having no
+  inputs, neither ever redraws. `Password({ name, length, special })` generates
+  a password and **seals it into the vault** — its `result` is the sealed
+  value's Secret Version QID, never the password, so pass it wherever a secret
+  reference is accepted (a container `.secret(...)` value) and grant the owning
+  repo `secret:Write` and `secret:Delete` on it. `length` defaults to 32 and
+  `special` to `.allow(["-", "_", "!", "@", "#", "+", "/"])`; `.disallow` means
+  letters and digits only. A `length` outside 1–1024, or a `special` entry that
+  is not a single character, raises `Random.InvalidRandomInput` at evaluation
+  time, failing at the offending call rather than at the plugin.
 - **`IAM.Role`/`IAM.Policy`** — org-scoped authorization: a `Role` is an
   empty subject; a `Policy` grants `subjects` (role QIDs) `verbs` over
   `objects`, all `*`-pattern matchers, default-deny. A repo's deployments
@@ -1390,7 +1402,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   echoes back a secret you *supplied* — a connection string built around a
   password — reads `nil` for the same reason: no output serves secret material.
   (`HashiCorp/Random` is the same machinery wired only into the local dev
-  harness.)
+  harness; for a password, prefer first-party `Skyr/Random.Password`, which
+  seals the same way and is served in every cell.)
 
 Exact inputs/outputs for the first-party modules live in the generated module
 reference — look them up rather than guessing (see below).
