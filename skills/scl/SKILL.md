@@ -541,7 +541,10 @@ let bucket = Database.makeBucket({ ... })   // remote module: resource is YOURS
 
 The manifest is the only way in: importing a repo that `dependencies` does not
 name is a `module not found` compile error, even if that repo is deployed and
-running. Add the entry first.
+running. Add the entry first. A repository may not list itself as a
+dependency: its own modules always come from the commit being deployed, so a
+resource several of its environments share (a shared `Knob.Secret`, say) lives
+in a separate repository they all import.
 
 A dependency may be in **any** org. Declaring it only asks — the importing
 repo's deployment role must hold `repository:View` on the dependency's
@@ -575,9 +578,7 @@ is remote state; calling a function it exports creates a resource owned by
 the package its source is *written in*, so a branch-/tag-pinned dependency's
 code sees the dependency's own current deployment even when you call it. In a
 hash-pinned dependency there is no deployment behind the package, and an
-`Env.*` read raises the catchable `Env.NoDeployment`. (`Std/Secret` is
-caller-based like effects: lookups always resolve the deploying repo's
-secrets.)
+`Env.*` read raises the catchable `Env.NoDeployment`.
 
 ## Resources
 
@@ -667,25 +668,30 @@ follow the same idiom.
 
 ## Secrets
 
-Read a deployment's secrets with `Std/Secret`. A secret's plaintext never enters
-SCL — `Secret.get(name)` returns an opaque `Ref { name, createdAt, qid }` whose
-`qid` is a Secret Version QID string, and a name that doesn't resolve (not set,
-or the deployment's role lacks `secret:View` on it) raises the catchable
-`Secret.NotFound`:
+A secret's plaintext never enters SCL. Every secret is owned by a resource, and
+SCL only handles a `Secret.Ref` — `Std/Secret` exports that one type,
+`type Ref enum { .version(Str) }`, an opaque pinned Secret Version QID. There is
+no lookup by name. Resources produce refs: a generated key's `pem`, a
+`Random.Password`'s `result`, and — for a value a person supplies — a
+`Skyr/Knob.Secret`'s `value`:
 
 ```scl
-import Std/Secret
+import Skyr/Knob
 
-let db = Secret.get("db-password")   // raises Secret.NotFound if unresolved
-// db.qid — pass this to a consumer; it is never the plaintext
+let db = Knob.Secret({ name: "db-password", description: "Primary DB password" })
+// db.value : Secret.Ref — pending until someone sets it; never the plaintext
 ```
 
-Hand the `qid` to something that resolves it at deploy time. In the container
-plugin, a pod's or container's `env` and an ephemeral volume's `files` seed are
-maps whose values are `.literal("…")` or `.secret(qid)` — you write
-`.secret(Secret.get(name).qid)`, which the `deploy` skill covers. The values
-themselves are set out of band with `skyr secrets set|list|delete`, never
-committed to git.
+`Knob.Secret` takes `name` and an optional `description`, and **no `default`**
+(it would be plaintext in git), so `value` is pending until set, gating
+dependents like any defaultless knob. Hand a ref to something that resolves it
+at deploy time: container `env` and volume `files` seeds, `HTTP.Resource`
+request parts, and Terraform provider credentials take
+`enum { .literal(Str), .secret(Secret.Ref) }`, so you write
+`.secret(db.value)` or `.secret(key.pem)` — never `.secret("…qid…")`. Import
+`Std/Secret` only when you need to name the type (`let r: Secret.Ref = …`).
+The value itself is set out of band with `skyr knobs set <name>` (stdin, a
+hidden prompt, or `--from-file`; never argv), which the `deploy` skill covers.
 
 ## Tests
 
@@ -732,8 +738,8 @@ Test.group("podName", fn()
 
 **Tests are verdicts over values, never over resources.** A test run holds no
 resource state, so every resource output reads pending and a case that reaches
-for one *fails*, naming the resource it awaited. `Secret.get` and `Time.now`
-raise `Secret.Unavailable` / `Time.Unavailable`, and `Std/Env` reports a fixed
+for one *fails*, naming the resource it awaited — a `Knob.Secret`'s `value`
+included. `Time.now` raises `Time.Unavailable`, and `Std/Env` reports a fixed
 placeholder identity; `Path.read` still reads the package's own files. So
 hoist the logic worth checking into pure functions over plain values — deriving
 a name, assembling an env map, validating a configuration — and let the

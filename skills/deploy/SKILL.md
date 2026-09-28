@@ -731,7 +731,7 @@ let account = ACME.Account({
 })
 
 let cert = account.DNS01Certificate({
-    privateKey: key.pem,   // the sealed key's Secret Version QID, never a PEM
+    privateKey: key.pem,   // the sealed key's Secret.Ref, never a PEM
     domains: ["example.com", "*.example.com"],
     zone: zone,   // the DNS.Zone above — it satisfies the ChallengeZone façade
 })
@@ -770,10 +770,11 @@ A volume carrying any `.secret` is mounted owner-only (`0700` root dir, `0600`
 files — an explicit `permissions` on the mount overrides the mode) owned by
 the mount's `userId`/`groupId`, defaulting to root — so name the uid the
 image's `USER` runs as, or the process cannot read its own key.
-Grants are explicit: the deployment role needs
-`secret:View`/`Write`/`Delete` on the key's and the ACME account's
-resource-scoped secrets (an `IAM.Policy` with wildcard objects like
-`"<org>/<repo>::*"` covers them — same stanza as the Secrets bullet below).
+Grants are explicit: the deployment role needs `resource:Update` on the key and
+the ACME account (sealing their material) and `secret:View` on their secrets
+(`<resource QID>!pem`, `!credentials`) to sign with them — an `IAM.Policy` with
+wildcard objects like `"<org>/<repo>::*"` covers both; the default `Super`
+deployment role already does.
 
 For private or internal chains, `Skyr/PKI` generates keys and signs CSRs
 in-config.
@@ -1069,7 +1070,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   its own region). `Container.ephemeralVolume({ files, size, name })` is
   scratch space living and dying with the pod, optionally seeded with
   `files: #{ "<path relative to the mount root>": .literal("…") }` — values are
-  the same two arms as `env` (`.literal(…)`/`.secret(qid)`), and a bare string
+  the same two arms as `env` (`.literal(…)`/`.secret(ref)`), and a bare string
   is a type error (see the Caddy example). **Mounting a seeded volume is how
   files reach a container** — there is no pod-level file input. Mount via a
   container's `mounts` dict keyed by absolute path:
@@ -1105,73 +1106,84 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   clamped 16–256 MiB) — a write past it fails with `ENOSPC`. That is a different
   failure mode from the confined default, which answers a root write with
   `EROFS`. Declare a `Mount` for anything that must persist or grow.
-- **Secrets.** Store sensitive values (passwords, tokens, TLS keys) with the
-  `skyr secrets` CLI or the web's Secrets pages, then consume them in SCL with
-  no plaintext in git.
-  `skyr secrets set <name>` reads the value from piped stdin, a hidden prompt,
-  or `--from-file` — never an argument, so it stays out of shell history;
-  `skyr secrets list` shows metadata only (never values); `skyr secrets delete`
-  clears a value. Values are repository-scoped by default, with
-  `--environment [name]` for a per-environment override.
-  `skyr secrets list --environment <env>` lists that environment's whole
-  **inventory** — repository scope, the environment's overrides, *and* the
-  secrets its resources own (a service account's key, a PKI key), which no
-  other listing reaches; it needs `environment:View` on the environment as
-  well as the per-row `secret:View`. `skyr secrets get <version-qid>` prints
-  one **value** to stdout (raw bytes, no trailing newline) for a caller
-  holding `secret:View` on it — `--encoding openssh` converts a generated
-  ed25519 PKCS#8 key, and a value with control characters is refused on a
-  terminal, so redirect it. The web does everything but the encodings, on
-  two pages: a repo's **Secrets** page (sidebar, below Settings) is the
-  repository scope alone (bare `secrets list`), an environment's **Secrets**
-  tab is that environment's inventory. Both reveal per row and carry
-  **Set secret** / per-row **Set new value** / **Delete**. A new secret set
-  from an environment tab picks its scope — `Override for <env>` (default) or
-  "Repository (all environments)"; the repo page has no choice, and an existing
-  row always acts at its **own** scope (rotating a repo row from an env tab
-  warns that it reaches every environment). Values are typed
-  (one trailing newline stripped, like piped stdin) or read from a file
-  (bytes verbatim, the only way to set binary/TLS material from a browser);
-  kebab-case name and 64 KiB checked client-side. Resource-owned rows are
-  read-only there as everywhere. In config, read them
-  via `Std/Secret`: `Secret.get(name).qid` is an opaque reference. Everywhere a
-  value may be sensitive it is written `.literal("…")` (a plain value) or
-  `.secret(qid)` — pass a secret as `.secret(Secret.get(name).qid)`. Three places
-  take such values: a pod's or a container's `env`; an ephemeral volume's
-  `files` seed, mounted into the containers that need it (the only route for a
-  value that can't be an env var — TLS keys, keytabs, anything binary); and an
-  `HTTP.Resource` request's header, query and form values, plus any depth of a
-  `.json` body. The
-  plaintext is resolved inside the platform at pod materialization — or, for a
-  request, immediately before it is sent — and never
-  enters git, the stored resource inputs, or any log; a volume seeded with any
-  secret is mounted owner-only (`0700`/`0600`, overridable with an explicit
-  `permissions`) under the mount's `userId`/`groupId`, root by default.
-  Consumption is IAM-gated with no implicit grant: the repo's **deployment
-  role** must hold
-  `secret:View` on each consumed secret, via an ordinary policy stanza —
-  `IAM.Policy({ name: "read-secrets", subjects: [deployer.qid], verbs:
-  ["secret:View"], objects: ["<org>/<repo>!*", "<org>/<repo>::*"] })` — or
-  `Secret.get` raises `Secret.NotFound` at eval. That same verb is what
-  releases plaintext to a *person* (`secrets get`, the web reveal): there is
-  no narrower "metadata only" grant, so a wildcard `secret:View` over a repo
-  is an export grant for every value in it — including keys resources
-  generated — and anyone who can `assumeRole` into that deployment role has
-  it too. **Rotation** (`skyr secrets set` again, or **Set new value** on a
-  web row) takes effect on the next deployment, and how depends on where the
-  secret is consumed: in `env` the pinned version is part of the pod's
-  identity, so the pod is **recreated**; in a read-only volume seed the content is
-  identity-excluded, so the new plaintext is written into the running pod **with
-  no restart** — except when it outgrows the pod's disk claim, and except for a
-  writable mount's seed, both of which recreate. Live delivery is not atomic and
-  a process that reads its files once at startup never sees it: bump the
-  volume's `name` to force a fresh pod. `skyr run` can't resolve secret
-  plaintext locally, so it rejects a pod with any `.secret(…)` value in an `env`
-  or a mounted volume's seed (a `.literal`-only pod runs); deploy the
-  environment instead.
-- **Knobs.** `Skyr/Knob.{Text,Toggle,Integer,Choice}` are manually provided,
-  per-environment values a human turns out of band — a feature flag, a banner
-  string, a worker count, a deployment mode. Declare one like any resource
+- **Secrets.** Every secret is **owned by a resource** and sealed in the
+  secrets vault; SCL only ever holds a `Secret.Ref` (`enum { .version(Str) }`,
+  a pinned Secret Version QID, never plaintext). Generators emit one:
+  `PKI.*PrivateKey.pem`, an ACME account's credentials,
+  `IAM.ServiceAccount.privateKey`, `Random.Password.result`, and any
+  Terraform output the provider flags sensitive. A value a **person** supplies
+  (a third-party API token, a password issued elsewhere) is a secret knob:
+  `let apiKey = Knob.Secret({ name: "api-key", description: "…" })` — no
+  `default` (it would be plaintext in git), `apiKey.value : Secret.Ref`,
+  **pending** until set, so it gates dependents like any defaultless knob (no
+  incident; fresh/PR environments start unset). Set it with
+  `printf '%s' "$KEY" | skyr knobs set api-key` (piped stdin, one trailing
+  newline dropped), a hidden prompt on a TTY, or `--from-file PATH` (bytes
+  verbatim — use it for keys/binary); an argv value is **refused**. Setting it
+  again rotates (a byte-identical re-set of the current value is a no-op);
+  `skyr knobs unset api-key` clears it back to pending (converged consumers keep
+  the version they hold). The web env **Knobs** tab has the same write-only
+  control. Everywhere a value may be sensitive it is written `.literal("…")` or
+  `.secret(ref)` — pass `.secret(apiKey.value)`, `.secret(key.pem)`,
+  `.secret(password.result)`; a PKI/ACME `privateKey` input takes the bare ref
+  (`privateKey: key.pem`). Four places take `.literal`/`.secret` values: a
+  pod's or container's `env`; an ephemeral volume's `files` seed, mounted into
+  the containers that need it (the only route for a value that can't be an env
+  var — TLS keys, keytabs, anything binary); an `HTTP.Resource` request's
+  header, query and form values, plus any depth of a `.json` body; and a
+  Terraform provider's marked credential fields (`Skyr/AWS` `accessKey`/
+  `secretKey`). The plaintext is resolved inside the platform at pod
+  materialization — or, for a request, immediately before it is sent — and
+  never enters git, the stored resource inputs, or any log; a volume seeded
+  with any secret is mounted owner-only (`0700`/`0600`, overridable with an
+  explicit `permissions`) under the mount's `userId`/`groupId`, root by
+  default. **IAM:** `secret:View` is the only secret verb — it covers
+  consuming (resolving a ref at materialization), listing metadata, and
+  revealing plaintext, checked against the version-less
+  `<resource QID>!<name>` (`!value` for a knob, `!pem` for a key, `!result` for
+  a password). Sealing, rotating and clearing a resource's own secret — setting
+  a secret knob included — is `resource:Update` on the owning resource; there
+  is no secret write verb. The default `Super` deployment role covers all of it
+  in its own org; a narrower deployment role needs e.g. `IAM.Policy({ name:
+  "read-secrets", subjects: [deployer.qid], verbs: ["secret:View"], objects:
+  ["<org>/<repo>::*!*"] })`, or the consumer fails to materialize, naming the
+  secret. Anchor object patterns with `::` — a bare `"<org>/<repo>*"` also
+  matches `<repo>front`. There is no narrower "metadata only" grant, so a
+  wildcard `secret:View` over a repo is an export grant for every value in it,
+  and anyone who can `assumeRole` into that deployment role has it too.
+  **Sharing** one secret across environments or repos: a repo may not depend on
+  itself, so declare the `Knob.Secret` at the top level of a *separate*
+  repo, export it, add that repo to the consumer's `Package.scle`
+  (`"Org/Shared": "main"`), `import Org/Shared/Config`, and pass
+  `.secret(Config.apiKey.value)`; the owning org grants the consumer's
+  deployment role `repository:View`/`environment:View`/`resource:View` plus
+  `secret:View` on `<knob QID>!value`. **Inventory and reveal:**
+  `skyr secrets list [--environment <env>]` lists every secret owned by an
+  alive resource in the environment (metadata only: name, owning resource,
+  created, digest, version QID), filtered per row by `secret:View`;
+  `skyr knobs list` shows a set secret knob's version QID in its value column
+  (`versionQid` in JSON). `skyr secrets get <version-qid>` prints one value
+  (raw bytes, no trailing newline) for a caller holding `secret:View` —
+  `--encoding openssh` converts a generated ed25519 PKCS#8 key, and a value
+  with control characters is refused on a terminal, so redirect it. The web
+  env **Secrets** tab is the read-only inventory with a per-row reveal. Values
+  are capped at 64 KiB and must be non-empty. **Rotation** reaches consumers on
+  the next reconcile pass as a new version QID: in `env` the pinned version is
+  part of the pod's identity, so the pod is **recreated**; in a read-only
+  volume seed the content is identity-excluded, so the new plaintext is written
+  into the running pod **with no restart** — except when it outgrows the pod's
+  disk claim, and except for a writable mount's seed, both of which recreate.
+  Live delivery is not atomic and a process that reads its files once at
+  startup never sees it: bump the volume's `name` to force a fresh pod. Old
+  versions stay resolvable; there is no version history or rollback.
+  `skyr run` never resolves plaintext: a secret knob is pending there, and a
+  pod with any `.secret(…)` value in an `env` or a mounted volume's seed (or an
+  `HTTP.Resource` naming one) is rejected (a `.literal`-only pod runs); deploy
+  the environment instead.
+- **Knobs.** `Skyr/Knob.{Text,Toggle,Integer,Choice,Secret}` are manually
+  provided, per-environment values a human turns out of band — a feature flag,
+  a banner string, a worker count, a deployment mode, an API key (`Secret`, see
+  Secrets above). Declare one like any resource
   (`Knob.Integer({ name: "workers", default: 4 })`,
   `Knob.Choice({ name: "mode", choices: [.blue, .green], default: .blue })`) and
   read its `.value`, the effective value: the supplied value, else the declared
@@ -1186,17 +1198,18 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   (`skyr deployments list`'s `HELD` column, `Deployment.status.holds`), which is
   where to look when the log has scrolled past.
   Turn a knob with
-  `skyr knobs set <name> <value>` (plain argv — knobs are non-secret; env from
-  ambient context or `--environment`) or the web env **Knobs** tab (`~k`);
+  `skyr knobs set <name> <value>` (plain argv for every type but `Secret`; env
+  from ambient context or `--environment`) or the web env **Knobs** tab (`~k`);
   `skyr knobs list` shows effective values and provenance, and `skyr knobs unset`
   clears non-destructively (converged dependents keep their last value). A set
   flows into the deployment on the next reconcile pass, rolling dependents —
   converge-plane, no hot reload. `Choice` offers a fixed set of concrete values
   and a consumer switching over its `.value` narrows exhaustively over them; a
   `Choice` selection is set by its rendered form (`skyr knobs set mode green`).
-  Give knobs a `default` if you deploy to ephemeral/PR environments, which start
-  unset. Turning a knob needs `resource:Update` on it; reading needs
-  `resource:View` (the ordinary resource verbs).
+  Give non-secret knobs a `default` if you deploy to ephemeral/PR environments,
+  which start unset. Turning a knob needs `resource:Update` on it; reading needs
+  `resource:View` (the ordinary resource verbs); revealing a `Secret` knob's
+  value needs `secret:View` on `<knob QID>!value`.
 - **`Artifact.File({ name, contents, mediaType })`** stores a file and
   returns a time-limited download `url` — useful for exposing generated
   config, reports, or deployment metadata.
@@ -1215,7 +1228,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   marker or the updates never stop. A `delete` that needs the create response
   leaves the resource durable until it is stored, so a teardown in that window
   is held for approval. Header/query/form values are `.literal("…")` or
-  `.secret(qid)` (secrets may also sit inside a `.json` body); plaintext never
+  `.secret(ref)` (secrets may also sit inside a `.json` body); plaintext never
   enters SCL, the stored inputs or the logs. Resolution needs `secret:View` on
   the consumed secret like every other consumer (see Secrets above), a
   credential the API echoes back is stored and quoted as `<redacted>`, and
@@ -1248,11 +1261,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `Noun({ name })` draw a word from a built-in dictionary, for names a human
   reads (`"{adjective.result}-{noun.result}"` → `brave-otter`); having no
   inputs, neither ever redraws. `Password({ name, length, special })` generates
-  a password and **seals it into the vault** — its `result` is the sealed
-  value's Secret Version QID, never the password, so pass it wherever a secret
-  reference is accepted (a container `.secret(...)` value) and grant the owning
-  repo `secret:Write` and `secret:Delete` on it — plus `secret:View` on the
-  same object for whatever consumes the password, or the seal succeeds and the
+  a password and **seals it into the vault** — its `result` is a `Secret.Ref`
+  to the sealed value, never the password, so pass it wherever a secret
+  reference is accepted (`.secret(password.result)`); sealing needs
+  `resource:Update` on the password resource, and whatever consumes it needs
+  `secret:View` on `<password QID>!result`, or the seal succeeds and the
   consumer fails later. `length` defaults to 32 and
   `special` to `.allow(["-", "_", "!", "@", "#", "+", "/"])`; `.disallow` means
   letters and digits only. A `length` outside 1–1024, or a `special` entry that
@@ -1278,17 +1291,18 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   agent) signs in as with a role of its own instead of borrowing a person's.
   Outputs `qid` (its full resource QID — that *is* its account name at every
   sign-in surface, so renaming the resource is a different account),
-  `privateKey` (the Secret Version QID of a generated Ed25519 key, sealed into
-  the vault on creation and never in resource state — read it out with
-  `skyr secrets get <that qid> --encoding openssh`), and `publicKeyPem`.
+  `privateKey` (a `Secret.Ref` to a generated Ed25519 key, sealed into the vault
+  on creation and never in resource state — read it out with
+  `skyr secrets get <its version qid> --encoding openssh`, the QID shown by
+  `skyr secrets list`), and `publicKeyPem`.
   `role` is a role QID and may name **another org's** role; the account is a
   member of the *role's* org, not the declaring one, and its standing is that
   role's, only there. Declaring one needs the declaring repo's deployment role
   to hold `role:AssignAsRootRole` on the role — decided in the **role's** org,
   which is that org's opt-in, and it is the *only* check (no
-  `organization:InviteMember` beside it) — plus `secret:Write`/`secret:Delete` on
-  the account's own key, matcher
-  `"<org>/<repo>::*:Skyr/IAM.ServiceAccount:*!pem"`. Sign in with
+  `organization:InviteMember` beside it) — plus `resource:Update` on the account
+  resource to seal its key (`secret:View` on
+  `"<org>/<repo>::*:Skyr/IAM.ServiceAccount:*!pem"` only to read it out). Sign in with
   `skyr auth signin --username '<qid>' --key <pkcs8-or-openssh-key>`; over git
   the QID is the SSH username **percent-encoded** — once in the scp-style
   remote (`<encoded-qid>@host:org/repo`), twice in an `ssh://` one, since git
@@ -1389,7 +1403,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   Skyr), surfacing the Terraform AWS provider as one module per AWS service
   (`Skyr/AWS/S3`, `Skyr/AWS/DynamoDB`, …); import only the services you use.
   Each service module exports `provider(config)` — bind it once with `region`
-  plus `accessKey`/`secretKey` as `.literal(…)`/`.secret(qid)` values (same
+  plus `accessKey`/`secretKey` as `.literal(…)`/`.secret(ref)` values (same
   secret machinery as pod `env`), then call constructors off the bound
   provider: `s3.Bucket("skyr-name", { …inputs })`. The first positional
   argument is the Skyr identity (renaming = destroy + create), and inputs the
@@ -1397,12 +1411,12 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   requires-replace. Field names come from the provider's own schema — trust
   editor completions/hover over guessing. A value the provider *returns* and
   flags sensitive is sealed into the vault as the resource's own secret and its
-  output carries the Secret Version QID, not the value — and so does the
+  output carries a `Secret.Ref`, not the value — and so does the
   provider state Skyr stores, which resolves the reference back on each
-  reconcile (so the repo's deployment role needs `secret:View` as well as
-  `secret:Write` and `secret:Delete`, the same three a `Skyr/PKI` key needs —
+  reconcile (so the repo's deployment role needs `resource:Update` to seal
+  and `secret:View` to resolve back, the same two a `Skyr/PKI` key needs —
   a `Read*` data source seals the same way but keeps no state to reconcile
-  from, so it wants only the other two);
+  from, so it wants only `resource:Update`);
   a sensitive value of any other shape than a string has no output field at
   all. An output that
   echoes back a secret you *supplied* — a connection string built around a
@@ -1539,8 +1553,8 @@ passes, silence never counting as recovery. A pod that has never served is
 reported broken *and* does not count as standing for a `ReplicaSet` — that is
 what explains a roll that is not advancing.
 
-An **uncaught SCL exception** during evaluation — reading a secret that isn't
-set, unwrapping a `nil`, any top-level `raise` your config doesn't `catch` —
+An **uncaught SCL exception** during evaluation — unwrapping a `nil`, an
+out-of-range constructor input, any top-level `raise` your config doesn't `catch` —
 opens a `CannotProgress` incident carrying the exception's message, so a missing
 input surfaces on the deployment instead of silently stalling.
 
@@ -1604,8 +1618,8 @@ curl -s https://skyr.foo/~docs/resources.md          # what every resource does:
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
 curl -s https://skyr.foo/~docs/networking.md         # private networks, routers, ACLs, internal DNS, the DMZ pattern
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
-curl -s https://skyr.foo/~docs/secrets.md            # secrets: scopes, CLI and web, consumption, IAM
-curl -s https://skyr.foo/~docs/knobs.md              # knobs: the four types, awaiting-input gating, skyr knobs CLI
+curl -s https://skyr.foo/~docs/secrets.md            # secrets: resource-owned, Knob.Secret, consumption, sharing, IAM
+curl -s https://skyr.foo/~docs/knobs.md              # knobs: the five types, awaiting-input gating, skyr knobs CLI
 curl -s https://skyr.foo/~docs/deletion.md           # deleting repos, orgs, and accounts
 curl -s https://skyr.foo/~docs/cross-repo-imports.md # depending on another repo, and sharing resources with one
 curl -s https://skyr.foo/~docs/iam.md                # permissions: roles, policies, matchers, verbs
