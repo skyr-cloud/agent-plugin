@@ -57,12 +57,25 @@ deploys to a different Skyr instance, substitute that instance's host.
   exactly what is under review, and empty when nothing is. Branch names under
   `deploy/` — and the bare name `deploy` — are reserved and cannot be
   environments; tags have no proposal ref.
+- A repository's **primary environment** is its first created branch or tag,
+  including a first push for approval. It stays primary until explicitly changed
+  in repository settings (`repository:Update` plus viewing the selected
+  environment), and changing it never deploys or tears anything down. It stays
+  visible and fetchable after teardown: branches retain their ordinary and
+  `deploy/` refs, tags only their tag ref. Source is the last actual head, not a
+  newer unapproved proposal; a never-deployed primary retains its initial
+  proposal even after withdrawal. That ordinary branch ref is retained source,
+  not proof it was deployed. A pending proposal still wins under `deploy/`.
+  Redeploying after every deployment/proposal is down still needs
+  `environment:Create` plus the push permission; retention grants no authority.
 - Deleting a ref tears the environment down:
   `git push skyr --delete feature-x` destroys everything that environment
   owns, in dependency order. A **durable** resource — `PersistentVolume` is the
   first-party one — is the exception: its destruction is *held* until a person
   approves that particular deletion, and the teardown does not finish until
-  somebody does (see "Durable resources: deletion waits for a person").
+  somebody does (see "Durable resources: deletion waits for a person"). A primary
+  ref reappears on the next fetch with retained source, without redeploying;
+  choose a different primary to stop retaining it.
 - **Rolling back is a first-class operation**, not a git manoeuvre: every
   deployment records which one preceded it, and `skyr deployments rollback <env>`
   redeploys that predecessor's commit as a *new* deployment. A deployment with
