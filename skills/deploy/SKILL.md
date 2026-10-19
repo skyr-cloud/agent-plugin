@@ -229,8 +229,8 @@ test code is unaffected.
 Two things legitimately keep a deployment in **Desired forever** — that is
 normal operation, not a stuck rollout:
 
-- Any **volatile resource** (a `Container.Pod`, `DNS.Zone`, or an
-  `HTTP.Resource` with a `check` represents external state that can drift, so
+- Any **volatile resource** (a `Container.Pod`, `Machine.Instance`,
+  `DNS.Zone`, or an `HTTP.Resource` with a `check` represents external state that can drift, so
   Skyr keeps reconciling).
 - A **branch or tag pin** in `Package.scle` dependencies: the deployment
   keeps following the foreign ref. Pin commit hashes to settle.
@@ -1077,6 +1077,25 @@ later**, and boundaries are **UTC only**. Completion is **at-least-once**, so
 the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 
 ## Other capabilities
+
+- **Virtual machines.** `Machine.Instance({ name, cpu, memory, rebootPolicy })`
+  (`import Skyr/Machine`) boots a VM from a minimal platform image on a host
+  Skyr picks in the region; no network or disk yet, reached over its serial
+  console. `cpu` is vCPUs (1–32); `memory` is **bytes**, a whole number of MiB,
+  at least 128 MiB. `rebootPolicy` is `.never`, `.onFailure` (default: boot
+  again after a panic or crash, not after the guest powers off) or `.always`.
+  The size is reserved for as long as the instance exists, running or not; a
+  deploy fails with a user-facing reason when no host has room. Changing
+  `cpu`/`memory` stops the machine and **fresh-boots** it under the same
+  identity (RAM is lost; a stopped machine takes the size and stays stopped);
+  changing only `rebootPolicy` never touches the running guest; an unchanged
+  declaration (or a rollback to one) does nothing extra. A machine left stopped
+  stays stopped — no deploy restarts it. Outputs: `state` (`.running`,
+  `.restarting`, `.stopped`), `lastStop` (`reason` `.cleanShutdown`/`.failure`,
+  `detail`, `bootCount`), `bootCount`, `imageVersion`. Health: running is
+  healthy, restarting is degraded, stopped after a failure is failing.
+  Scheduling, start/stop and failure events land in `skyr resources logs
+  Skyr/Machine.Instance:<name>`.
 
 - **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
