@@ -1090,16 +1090,24 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   identity (RAM is lost; a stopped machine takes the size and stays stopped);
   changing only `rebootPolicy` never touches the running guest; an unchanged
   declaration (or a rollback to one) does nothing extra. A machine left stopped
-  stays stopped — no deploy restarts it. Outputs: `state` (`.running`,
-  `.restarting`, `.stopped`), `lastStop` (`reason` `.cleanShutdown`/`.failure`,
-  `detail`, `bootCount`), `bootCount`, `imageVersion`. Health: running is
-  healthy, restarting is degraded, stopped after a failure is failing.
+  stays stopped — no deploy restarts it. **Power actions are not SCL**: `skyr
+  machines start|stop|reboot <name>` (or the buttons on the instance's web
+  page) act on the machine immediately, authorized on `resource:StartMachine`,
+  `resource:StopMachine`, `resource:RebootMachine`. Stop leaves it stopped
+  whatever `rebootPolicy` says (it keeps its reservation); start boots it fresh
+  at its declared size; reboot is a fresh boot of a running machine (a stopped
+  one must be started). Outputs: `state` (`.running`, `.restarting`,
+  `.stopped`), `lastStop` (`reason` `.cleanShutdown`/`.failure`/`.stoppedByUser`,
+  `detail`, `bootCount`), `bootCount`, `imageVersion`; outputs refresh on the
+  next check, not instantly after an action. Health: running is healthy,
+  restarting is degraded, stopped after a failure is failing, stopped cleanly
+  or on request has no health opinion.
   Scheduling, start/stop and failure events land in `skyr resources logs
   Skyr/Machine.Instance:<name>`. The resource's web-app page shows the state
   (and why a stopped machine stopped) and a **serial console** (no guest
   agent; replays the current boot's output, follows the machine into its next
   boot), authorized on `resource:AttachMachineConsole` against the instance.
-  There is no CLI for it yet.
+  There is no CLI console yet.
 
 - **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
