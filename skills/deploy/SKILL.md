@@ -1095,7 +1095,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `detail`, `bootCount`), `bootCount`, `imageVersion`. Health: running is
   healthy, restarting is degraded, stopped after a failure is failing.
   Scheduling, start/stop and failure events land in `skyr resources logs
-  Skyr/Machine.Instance:<name>`.
+  Skyr/Machine.Instance:<name>`. The resource's web-app page shows the state
+  (and why a stopped machine stopped) and a **serial console** (no guest
+  agent; replays the current boot's output, follows the machine into its next
+  boot), authorized on `resource:AttachMachineConsole` against the instance.
+  There is no CLI for it yet.
 
 - **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
