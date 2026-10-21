@@ -1101,7 +1101,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `detail`, `bootCount`), `bootCount`, `imageVersion`; outputs refresh on the
   next check, not instantly after an action. Health: running is healthy,
   restarting is degraded, stopped after a failure is failing, stopped cleanly
-  or on request has no health opinion.
+  or on request is healthy (it is doing what it was told).
   Scheduling, start/stop and failure events land in `skyr resources logs
   Skyr/Machine.Instance:<name>`. The resource's web-app page shows the state
   (and why a stopped machine stopped) and a **serial console** (no guest
