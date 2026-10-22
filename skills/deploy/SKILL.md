@@ -1080,8 +1080,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 
 - **Virtual machines.** `Machine.Instance({ name, cpu, memory, rebootPolicy })`
   (`import Skyr/Machine`) boots a VM from a minimal platform image on a host
-  Skyr picks in the region; no network or disk yet, reached over its serial
-  console. `cpu` is vCPUs (1–32); `memory` is **bytes**, a whole number of MiB,
+  Skyr picks in the region; no disk yet, reached over its serial console and
+  over the private networks it has NICs on (see the next bullet). `cpu` is vCPUs (1–32); `memory` is **bytes**, a whole number of MiB,
   at least 128 MiB. `rebootPolicy` is `.never`, `.onFailure` (default: boot
   again after a panic or crash, not after the guest powers off) or `.always`.
   The size is reserved for as long as the instance exists, running or not; a
@@ -1108,6 +1108,25 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   agent; replays the current boot's output, follows the machine into its next
   boot), authorized on `resource:AttachMachineConsole` against the instance.
   There is no CLI console yet.
+
+- **Private networks and internet gateways for machines.**
+  `Net.Network({ name, ipv4?, ipv6? })` (`import Skyr/Net`) is a private L2
+  network (RFC 1918 /16–/29, ULA /48–/120); machines join it with
+  `nics: #{ "eth1": { network: lan } }` (`resource:AttachMachineToNetwork` on
+  the network) and get addresses over DHCP/RA. A network alone has no route to
+  the internet: `Net.Gateway({ name, networks: #{ "lan": lan } })`
+  (`resource:AttachGatewayToNetwork` on each network) gives the attached
+  networks one, with a public IPv4 (an Elastic IP) and/or IPv6 address per
+  family its networks have; **public addresses stick until the gateway is
+  deleted**. A machine opts in with `gateway: gw`
+  (`resource:RouteMachineThroughGateway` on the gateway): default routes on its
+  NIC on one of the gateway's networks (lowest key), never a reboot. Inbound
+  traffic only through ports: `gw.Port({ protocol: .tcp, port: 443, target:
+  "10.42.0.17", targetPort: 8443, addressTranslation: .destinationOnly })`
+  (`resource:PublishGatewayPort` on the gateway) — same family as the target,
+  one per (family, protocol, port); `.destinationOnly` keeps the client address
+  (the target must route through the gateway), `.full` also rewrites the
+  source. Full reference: the `Skyr/Net` page of the SCL reference.
 
 - **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
