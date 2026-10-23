@@ -70,7 +70,12 @@ deploys to a different Skyr instance, substitute that instance's host.
   `environment:Create` plus the push permission; retention grants no authority.
 - Deleting a ref tears the environment down:
   `git push skyr --delete feature-x` destroys everything that environment
-  owns, in dependency order. A **durable** resource — `PersistentVolume` is the
+  owns, in dependency order. Deletion starts on the next reconciliation
+  tick even after repeated failures built up a long retry backoff; approval
+  likewise does not inherit a proposal's backoff. If a deployment was failing
+  only because its resources were failing, their recovery triggers a fresh
+  pass promptly so its incident closes without waiting out the backoff.
+  A **durable** resource — `PersistentVolume` is the
   first-party one — is the exception: its destruction is *held* until a person
   approves that particular deletion, and the teardown does not finish until
   somebody does (see "Durable resources: deletion waits for a person"). A primary
