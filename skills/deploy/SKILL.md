@@ -1133,6 +1133,21 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   (the target must route through the gateway), `.full` also rewrites the
   source. Full reference: the `Skyr/Net` page of the SCL reference.
 
+- **Raw block disks.** Where an operator has enabled a storage pool,
+  `Storage.Disk({ name: "data", capacity: 10737418240 })` (`import
+  Skyr/Storage`) manages a blank, regional **data** disk. `capacity` is bytes,
+  a positive multiple of 4194304 (4 MiB), and is a grow-only minimum:
+  increasing it grows the existing backing; smaller requests and rollback
+  never shrink it. Read `effectiveCapacity` for the actual retained size.
+  The guest owns partitioning, formatting and filesystem growth. A Disk has
+  an independent lifetime, but **removing its declaration destroys live
+  data**, without a Disk-specific deletion hold/protection flag. Operator
+  recovery copies may retain historical bytes until their seven-day expiry;
+  they are not a customer backup API. Machine disk attachment is a separate
+  integration and is not yet exposed by `Machine.Instance`; do not invent a
+  `disks` argument from this resource's existence. Full reference: the
+  `Skyr/Storage` page of the SCL reference.
+
 - **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
   its own region). `Container.ephemeralVolume({ files, size, name })` is
