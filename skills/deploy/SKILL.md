@@ -1143,10 +1143,25 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   an independent lifetime, but **removing its declaration destroys live
   data**, without a Disk-specific deletion hold/protection flag. Operator
   recovery copies may retain historical bytes until their seven-day expiry;
-  they are not a customer backup API. Machine disk attachment is a separate
-  integration and is not yet exposed by `Machine.Instance`; do not invent a
-  `disks` argument from this resource's existence. Full reference: the
-  `Skyr/Storage` page of the SCL reference.
+  they are not a customer backup API.
+  On an instance serving the disk-capable Machine frontend, attach it with
+  `Machine.Instance({ name: "db", cpu: 1, memory: 268435456,
+  disks: #{ "data": { disk: data } } })`. Confirm the deployed reference
+  before using it: both an operator-enabled pool and storage-capable compute
+  hosts are required. Disks and Machines must be in the same region; one Disk
+  has at most one attachment, including no duplicate keys on one Machine.
+  Moving a Disk releases the previous binding before preparing the new one;
+  it does not copy or recreate its bytes. Disk use checks
+  `resource:AttachMachineToDisk` against that Disk's full QID.
+  By default attachment changes on a running Machine stop it, apply all disk
+  and NIC changes, then boot it once. `hotPlug: true` opts an entry into live
+  add/eject; an ignored eject fails convergence after a finite wait, and a
+  user Stop followed by ordinary reconciliation can unblock it. An unreachable
+  source is never permission to take over. Stopped Machines stay stopped.
+  Growth is live regardless of `hotPlug` and preserves the attachment serial;
+  guest partition/filesystem growth remains manual. Machine replacement does
+  not delete the independent Disk. Full reference: the `Skyr/Storage` and
+  `Skyr/Machine` pages of the SCL reference.
 
 - **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
