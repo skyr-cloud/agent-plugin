@@ -1160,8 +1160,15 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   source is never permission to take over. Stopped Machines stay stopped.
   Growth is live regardless of `hotPlug` and preserves the attachment serial;
   guest partition/filesystem growth remains manual. Machine replacement does
-  not delete the independent Disk. Full reference: the `Skyr/Storage` and
-  `Skyr/Machine` pages of the SCL reference.
+  not delete the independent Disk. The web app's Disk and Machine panels
+  (API `Resource.diskInfo` / `Resource.machineDisks`) show effective and
+  reserved capacity, the attachment, host- versus guest-seen capacity while a
+  resize converges, storage-path health (Healthy / Reconnecting — I/O paused /
+  Failed — I/O failing, with a Machine incident) and cumulative host I/O
+  counters, which reset on a new attachment, host restart or move. The Disk's
+  resource log records lifecycle, attachment and storage interruption/recovery
+  events. Full reference: the `Skyr/Storage` and `Skyr/Machine` pages of the
+  SCL reference.
 
 - **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
   storage that outlives pods (min 8 MiB; a pod can only mount volumes from
