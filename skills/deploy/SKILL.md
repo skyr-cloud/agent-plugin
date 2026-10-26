@@ -1124,23 +1124,45 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   source. Full reference: the `Skyr/Net` page of the SCL reference.
 
 - **Raw block disks.** Where an operator has enabled a storage pool,
-  `Storage.Disk({ name: "data", capacity: 10737418240 })` (`import
-  Skyr/Storage`) manages a blank, regional **data** disk. `capacity` is bytes,
-  a positive multiple of 4194304 (4 MiB), and is a grow-only minimum:
+  `Storage.Disk({ name: "data", mode: .readWriteOnce({ capacity: 10737418240 }) })`
+  (`import Skyr/Storage`) manages a blank, regional disk. The required `mode`
+  is `.readWriteOnce({ capacity, image? })` or `.readOnlyMany({ image })`.
+  Writable `capacity` is bytes, a positive multiple of 4194304 (4 MiB), and
+  is a grow-only minimum:
   increasing it grows the existing backing; smaller requests and rollback
   never shrink it. Read `effectiveCapacity` for the actual retained size.
-  The guest owns partitioning, formatting and filesystem growth. A Disk has
-  an independent lifetime, but **removing its declaration destroys live
-  data**, without a Disk-specific deletion hold/protection flag. Operator
+  The guest owns partitioning, formatting and filesystem growth.
+  `image` is a public HTTPS URL serving a standalone qcow2 (no backing or
+  external data files, no encryption), optionally pinned with
+  `#sha256=<64 hexadecimal digits>`. Credentials and private/link-local/IMDS
+  destinations are refused, including through DNS and redirects; downloads
+  have an operator-configured size cap. Skyr fetches only at creation and
+  verifies/converts the image before allowing attachment; a failed fetch,
+  verification or conversion fails creation. `imageDigest` reports SHA-256
+  of the fetched qcow2 bytes, or `nil` for a blank disk. Writable capacity
+  must cover the image's virtual size. `.readOnlyMany` derives capacity from
+  that size, cannot grow and permits concurrent guest-read-only attachments
+  without claim/eject handover. Trusted hosts/Cloud Hypervisor enforce
+  read-only access on both backends; LIO additionally write-protects guest
+  mappings, while ONTAP uses ordinary writable SAN mappings. Projection has
+  an initial provisioner-only writable phase before shared read-only use.
+  A mode change or image URL text change (including its pin) creates a new
+  trailing-hash Disk identity; capacity is excluded from the hash. Published
+  URLs should be immutable and digest-pinned; changing bytes at the same URL
+  does not refresh an existing Disk.
+  A Disk has an independent lifetime, but **removing its declaration destroys
+  live data**, without a Disk-specific deletion hold/protection flag. Deletion
+  is blocked while any Machine is attached. Operator
   recovery copies may retain historical bytes until their seven-day expiry;
   they are not a customer backup API.
   On an instance serving the disk-capable Machine frontend, attach it with
   `Machine.Instance({ name: "db", cpu: 1, memory: 268435456,
   disks: #{ "data": { disk: data } } })`. Confirm the deployed reference
   before using it: both an operator-enabled pool and storage-capable compute
-  hosts are required. Disks and Machines must be in the same region; one Disk
-  has at most one attachment, including no duplicate keys on one Machine.
-  Moving a Disk releases the previous binding before preparing the new one;
+  hosts are required. Disks and Machines must be in the same region; a writable
+  Disk has at most one attachment. Neither mode permits duplicate keys for
+  the same Disk on one Machine. Moving a writable Disk releases the previous
+  binding before preparing the new one;
   it does not copy or recreate its bytes. Disk use checks
   `resource:AttachMachineToDisk` against that Disk's full QID.
   By default attachment changes on a running Machine stop it, apply all disk
