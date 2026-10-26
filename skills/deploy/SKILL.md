@@ -1123,6 +1123,20 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   (the target must route through the gateway), `.full` also rewrites the
   source. Full reference: the `Skyr/Net` page of the SCL reference.
 
+- **Host-local scratch disks.** `Machine.Instance` also accepts
+  `disks: #{ "cache": .scratch(4294967296) }` (bytes), sharing the 16-device
+  limit with durable disks. Sizes round up to 512-byte sectors. The device is
+  blank initially; the guest formats
+  and mounts it. Find it by `machine.disks["cache"]?.serial`, not `/dev/vdX`
+  ordering. It survives reboot and Stop/Start on the same host, but **loses all
+  contents when the Machine moves to another host**, or the entry/Machine is
+  removed. Never use it as durable storage or a boot disk. Capacity is reserved
+  while stopped too, billed as disk space, and oversized requests fail
+  scheduling. Growing is allowed, shrinking is refused; scratch changes reboot
+  a running Machine, leave a stopped one stopped, and preserve the serial.
+  Guest filesystem growth remains the guest's responsibility.
+
+
 - **Raw block disks.** Where an operator has enabled a storage pool,
   `Storage.Disk({ name: "data", mode: .readWriteOnce({ capacity: 10737418240 }) })`
   (`import Skyr/Storage`) manages a blank, regional disk. The required `mode`
@@ -1157,7 +1171,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   they are not a customer backup API.
   On an instance serving the disk-capable Machine frontend, attach it with
   `Machine.Instance({ name: "db", cpu: 1, memory: 268435456,
-  disks: #{ "data": { disk: data } } })`. Confirm the deployed reference
+  disks: #{ "data": .disk({ disk: data }) } })`. Confirm the deployed reference
   before using it: both an operator-enabled pool and storage-capable compute
   hosts are required. Disks and Machines must be in the same region; a writable
   Disk has at most one attachment. Neither mode permits duplicate keys for
