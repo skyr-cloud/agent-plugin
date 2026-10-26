@@ -30,6 +30,10 @@ and debug a rollout. Authoring the SCL itself — syntax, types, modules,
 Examples use `skyr.foo` as the instance host; if the user's repository
 deploys to a different Skyr instance, substitute that instance's host.
 
+`skyr run` is temporarily unavailable: the local container backend has been
+removed. Validate locally with `skyr check` and `skyr test`, then push to Skyr
+to deploy resources.
+
 ## Mental model
 
 - The hierarchy is **Organization → Repository → Environment → Deployment**.
@@ -688,8 +692,8 @@ zone.CNAMERecord({ name: "www", target: "example.com" })
   — which rules out anything sub-second or fractional, and anything past
   roughly 68 years. Use a multiple of `Time.second`, `Time.minute`, `Time.hour`
   or `Time.day`. The raise fails at the offending call rather than at the
-  plugin; `skyr run` surfaces it locally, and `skyr check` does not evaluate, so
-  it does not. A calendar-month span (`Time.month`, `Time.year`) is refused
+  plugin. `skyr check` does not evaluate, so it does not report these errors.
+  A calendar-month span (`Time.month`, `Time.year`) is refused
   earlier still: a TTL is a `Time.Duration`, a fixed length, and a calendar span
   is a `Time.CalendarDuration` — a type error, which `skyr check` does report.
   Records default to the zone's `defaultTtl`, itself 5 minutes unless set.
@@ -760,8 +764,7 @@ let cert = account.DNS01Certificate({
 
 `directoryUrl` must be an `https` CA on the public internet: a deployed
 account refuses a loopback, private, link-local, or otherwise non-public
-directory (an internal CA is reachable only under `skyr run`, which hosts the
-plugin on your own machine).
+directory.
 The same restriction applies to the hosts the challenge self-check reaches, so
 an HTTP-01 domain and a DNS-01 zone's nameservers have to resolve publicly —
 but there it shows up as a certificate that waits in its challenge state
@@ -909,18 +912,6 @@ fails; established routes stay), and a network owner who doesn't own the
 adjacent router has no lever short of deleting the network — which is exactly
 why each side brings its own router.
 
-**Under `skyr run`** routers are emulated: same reachability, same ACL, same DNS
-closure, and member networks are isolated from each other absent a router. Four
-local-only divergences, none of which a deployment produces: every local pod
-also shares the `skyr-run-default` network (so isolation is faithful for
-member-network addresses, not for the shared ones behind them); DNS records are
-injected at pod creation while routes converge live, so a running local pod can
-hold a route to a network whose names it can't yet resolve; a local router's
-address on a member network is that network's gateway (the reserved first host)
-rather than a pool address, which is what `addresses` reports locally; and those
-addresses answer more than `ping`, since they are the bridge gateways local name
-resolution and internet egress already go through.
-
 ## Sharing networks, volumes, and addresses across repos
 
 Networks, persistent volumes, and internet addresses are shareable across
@@ -1008,8 +999,7 @@ optional policy fields:
   never restarts anything by a route of its own — it stops the container and
   `restart` decides, so a workload that hangs sick gets the same backoff,
   retry cap and crash-loop judgment as one that exits sick. Adding, changing
-  or removing a probe **recreates the pod**. `skyr run` accepts one and does
-  not execute it.
+  or removing a probe **recreates the pod**.
 
 A **job** is just a pod whose container uses `.onFailure`/`.never`; job-ness is
 implied by configuration, never declared.
@@ -1281,10 +1271,6 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   Live delivery is not atomic and a process that reads its files once at
   startup never sees it: bump the volume's `name` to force a fresh pod. Old
   versions stay resolvable; there is no version history or rollback.
-  `skyr run` never resolves plaintext: a secret knob is pending there, and a
-  pod with any `.secret(…)` value in an `env` or a mounted volume's seed (or an
-  `HTTP.Resource` naming one) is rejected (a `.literal`-only pod runs); deploy
-  the environment instead.
 - **Knobs.** `Skyr/Knob.{Text,Toggle,Integer,Choice,Secret}` are manually
   provided, per-environment values a human turns out of band — a feature flag,
   a banner string, a worker count, a deployment mode, an API key (`Secret`, see
@@ -1336,21 +1322,19 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `.secret(ref)` (secrets may also sit inside a `.json` body); plaintext never
   enters SCL, the stored inputs or the logs. Resolution needs `secret:View` on
   the consumed secret like every other consumer (see Secrets above), a
-  credential the API echoes back is stored and quoted as `<redacted>`, and
-  `skyr run` — which resolves no plaintext at all — refuses a request that names
-  one instead of sending it without. A prior-independent `create` +
-  `check` that just GET the same URL is the fetch-a-document shape. Hosted
+  credential the API echoes back is stored and quoted as `<redacted>`. A
+  prior-independent `create` + `check` that just GET the same URL is the
+  fetch-a-document shape. Hosted
   deployments reach public destinations only: `http`/`https` URLs, with
   requests to loopback/private/link-local addresses refused (including
   hostnames or redirect hops resolving to them); requests time out after 30s
-  and the stored responses are capped at 4 MiB together. `skyr run` applies no
-  address restrictions, so probing `localhost` locally keeps working.
+  and the stored responses are capped at 4 MiB together.
 - **`PKI.*`** — `ED25519PrivateKey`/`ECDSAPrivateKey`/`RSAPrivateKey`,
   `CertificationRequest`, `CertificateSignature`: build self-managed
   certificate chains (CAs, client certs, internal TLS) entirely in-config.
   An `RSAPrivateKey` `size` outside 2048–16384 bits raises
   `PKI.InvalidPKIInput` at evaluation time, failing at the offending call
-  rather than at the plugin; `skyr run` surfaces it locally.
+  rather than at the plugin.
 - **`PKI/ACME.*`** — publicly-trusted TLS certificates over ACME (RFC 8555, the
   Let's Encrypt protocol). An `Account` yields `DNS01Certificate` (composes with
   `Skyr/DNS`, does wildcards) and `HTTP01Certificate` (you serve the token)
@@ -1441,8 +1425,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `Rollout.formatVersion(version)`. `name` is the whole identity, so
   renaming replaces the resource and the replacement restarts at `0.0.0` —
   there is no way to set or roll back a number. Use it for image tags,
-  release labels, or anything that should move when content moves. Under
-  `skyr run` (and `skyr check`/the REPL) paths carry no content identifier,
+  release labels, or anything that should move when content moves. In
+  `skyr check` and the REPL, paths carry no content identifier,
   so a path-backed tier never advances locally — that only happens on a
   real deployment.
 - **`Rollout.ReplicaSet({ name, count, replica, maxSurge?, maxUnavailable? })`**
@@ -1480,12 +1464,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   retired by later unhealth. The set is volatile (deployment stays `Desired`)
   until it settles. Everything a replica builds is a sub-resource of the set.
   `name` is the whole identity — renaming rebuilds from scratch,
-  while `count: 0` keeps the set and holds nothing. Under `skyr run` the loop
-  reconciles on change rather than on a timer, so a roll advances one step per
-  save locally, and the replicas a roll retires come down when the run restarts
-  or on ctrl+C — except for whatever a run's one held orphan walk still finds
-  when it discharges, on the first pass that names everything with nothing in
-  flight; a real deployment paces itself.
+  while `count: 0` keeps the set and holds nothing. A deployment paces the roll
+  automatically.
 - **`Rollout.Rollback({ reason? })`** — declaring it asks the platform to roll
   this deployment back; see the rollback section above for the identity rules,
   the required `environment:Rollback` grant, and the inert-deployment hazard.
