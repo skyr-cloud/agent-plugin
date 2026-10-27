@@ -1073,10 +1073,28 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 
 ## Other capabilities
 
-- **Virtual machines.** `Machine.Instance({ name, cpu, memory, rebootPolicy })`
-  (`import Skyr/Machine`) boots a VM from a minimal platform image on a host
-  Skyr picks in the region; no disk yet, reached over its serial console and
-  over the private networks it has NICs on (see the next bullet). `cpu` is vCPUs (1–32); `memory` is **bytes**, a whole number of MiB,
+- **Virtual machines.** `Machine.Instance({ name, bootDisk, cpu, memory, rebootPolicy })`
+  (`import Skyr/Machine`) requires `bootDisk: Storage.Disk` in the same region;
+  there is **no default OS image**. For example, declare
+  `let boot = Storage.Disk({ name: "boot", mode: .readOnlyMany({ image:
+  "https://images.example.com/guest.qcow2" }) })` (`import Skyr/Storage`),
+  then `Machine.Instance({ name: "box", bootDisk: boot, cpu: 1,
+  memory: 268435456 })`. The URL is a placeholder for your compatible image.
+  The boot Disk identity contributes to the Machine's trailing name hash:
+  changing it creates a new Machine, never a hot-plugged root swap. It cannot
+  also appear in `disks`. A writable `.readWriteOnce` boot disk cannot be
+  claimed while its holder is running: **stop the holder first**.
+  Skyr supplies only a kernel and tiny boot-shim initramfs. The shim finds the
+  root by exact virtio serial, mounts **whole-disk ext4**, and switches root
+  into the image's `/sbin/init` as PID 1. There is no firmware boot, user kernel
+  or loadable module support; virtio, ext4, overlayfs, tmpfs and cgroups are
+  built in. A shared `.readOnlyMany` root mounts `ro,noload`; the image's init
+  must provide writable runtime state with tmpfs mounts/overlays or copy the
+  root into RAM and pivot. No platform overlay or guest agent is injected.
+  The image owns init, networking and security. See
+  `https://skyr.foo/~docs/machine-images.md` for image authoring and networking.
+  The VM runs on a host Skyr picks in the region, reached over its serial
+  console and private NICs. `cpu` is vCPUs (1–32); `memory` is **bytes**, a whole number of MiB,
   at least 128 MiB. `rebootPolicy` is `.never`, `.onFailure` (default: boot
   again after a panic or crash, not after the guest powers off) or `.always`.
   The size is reserved for as long as the instance exists, running or not; a
@@ -1093,8 +1111,12 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   at its declared size; reboot is a fresh boot of a running machine (a stopped
   one must be started). Outputs: `state` (`.running`, `.restarting`,
   `.stopped`), `lastStop` (`reason` `.cleanShutdown`/`.failure`/`.stoppedByUser`,
-  `detail`, `bootCount`), `bootCount`, `imageVersion`; outputs refresh on the
-  next check, not instantly after an action. Health: running is healthy,
+  `detail`, `bootCount`), `bootCount`, `imageDigest: Str?` (replaces
+  `imageVersion`: SHA-256 of the boot Disk's original qcow2, `nil` if created
+  blank, not a checksum of subsequent writes), and `kernelVersion` (platform
+  kernel/shim of the current or last boot). Fresh boots use the host's current
+  kernel; an in-place guest reboot keeps its booted kernel. Outputs refresh
+  on the next check, not instantly after an action. Health: running is healthy,
   restarting is degraded, stopped after a failure is failing, stopped cleanly
   or on request is healthy (it is doing what it was told).
   Scheduling, start/stop and failure events land in `skyr resources logs
@@ -1108,7 +1130,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `Net.Network({ name, ipv4?, ipv6? })` (`import Skyr/Net`) is a private L2
   network (RFC 1918 /16–/29, ULA /48–/120); machines join it with
   `nics: #{ "eth1": { network: lan } }` (`resource:AttachMachineToNetwork` on
-  the network) and get addresses over DHCP/RA. A network alone has no route to
+  the network). The image must bring up NICs, process DHCPv4, IPv6 RA and
+  stateful DHCPv6, and apply advertised DNS servers. It must also configure
+  the service-link NIC (outside `nics`), whose resolver at `169.254.0.2` /
+  `fd5c:5c5c:5c5c::2` answers private and public names; this is not internet
+  egress. A network alone has no route to
   the internet: `Net.Gateway({ name, networks: #{ "lan": lan } })`
   (`resource:AttachGatewayToNetwork` on each network) gives the attached
   networks one, with a public IPv4 (an Elastic IP) and/or IPv6 address per
@@ -1170,13 +1196,16 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   recovery copies may retain historical bytes until their seven-day expiry;
   they are not a customer backup API.
   On an instance serving the disk-capable Machine frontend, attach it with
-  `Machine.Instance({ name: "db", cpu: 1, memory: 268435456,
-  disks: #{ "data": .disk({ disk: data }) } })`. Confirm the deployed reference
+  `Machine.Instance({ name: "db", bootDisk: boot, cpu: 1, memory: 268435456,
+  disks: #{ "data": .disk({ disk: data }) } })`, using a separately declared
+  compatible boot Disk as above. Confirm the deployed reference
   before using it: both an operator-enabled pool and storage-capable compute
   hosts are required. Disks and Machines must be in the same region; a writable
   Disk has at most one attachment. Neither mode permits duplicate keys for
-  the same Disk on one Machine. Moving a writable Disk releases the previous
-  binding before preparing the new one;
+  the same Disk on one Machine, including a Disk already used as `bootDisk`.
+  A running boot-disk holder must be stopped before another Machine can claim
+  that writable Disk; the data-disk hot-plug rules do not override this.
+  Moving a writable data Disk releases the previous binding before preparing the new one;
   it does not copy or recreate its bytes. Disk use checks
   `resource:AttachMachineToDisk` against that Disk's full QID.
   By default attachment changes on a running Machine stop it, apply all disk
@@ -1737,6 +1766,7 @@ curl -s https://skyr.foo/llms.txt                    # index of all doc pages
 curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, ownership in depth
 curl -s https://skyr.foo/~docs/resources.md          # what every resource does: transitions, drift, reads
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
+curl -s https://skyr.foo/~docs/machine-images.md     # Machine bootDisk contract, guest image authoring
 curl -s https://skyr.foo/~docs/networking.md         # private networks, routers, ACLs, internal DNS, the DMZ pattern
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
 curl -s https://skyr.foo/~docs/secrets.md            # secrets: resource-owned, Knob.Secret, consumption, sharing, IAM
