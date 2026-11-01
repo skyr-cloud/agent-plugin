@@ -1078,7 +1078,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   there is **no default OS image**. For example, declare
   `let boot = Storage.Disk({ name: "boot", mode: .readOnlyMany({ image:
   "https://images.example.com/guest.qcow2" }) })` (`import Skyr/Storage`),
-  then `Machine.Instance({ name: "box", bootDisk: boot, cpu: 1,
+  then `Machine.Instance({ name: "box", bootDisk: boot, cpu: 1000,
   memory: 268435456 })`. The URL is a placeholder for your compatible image.
   The boot Disk identity contributes to the Machine's trailing name hash:
   changing it creates a new Machine, never a hot-plugged root swap. It cannot
@@ -1094,7 +1094,11 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   The image owns init, networking and security. See
   `https://skyr.foo/~docs/machine-images.md` for image authoring and networking.
   The VM runs on a host Skyr picks in the region, reached over its serial
-  console and private NICs. `cpu` is vCPUs (1–32); `memory` is **bytes**, a whole number of MiB,
+  console and private NICs. `cpu` is **millicores** (100–32000, 1000 = one core),
+  reserved and enforced on the host for the whole VMM, including I/O threads.
+  The guest sees `ceil(cpu / 1000)` vCPUs: `cpu: 1500` presents two vCPUs
+  capped at 1.5 cores of CPU time. Old whole-vCPU values (`cpu: 2`) are
+  rejected; use `cpu: 2000` for two cores. `memory` is **bytes**, a whole number of MiB,
   at least 128 MiB. `rebootPolicy` is `.never`, `.onFailure` (default: boot
   again after a panic or crash, not after the guest powers off) or `.always`.
   The size is reserved for as long as the instance exists, running or not; a
@@ -1196,7 +1200,7 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   recovery copies may retain historical bytes until their seven-day expiry;
   they are not a customer backup API.
   On an instance serving the disk-capable Machine frontend, attach it with
-  `Machine.Instance({ name: "db", bootDisk: boot, cpu: 1, memory: 268435456,
+  `Machine.Instance({ name: "db", bootDisk: boot, cpu: 1000, memory: 268435456,
   disks: #{ "data": .disk({ disk: data }) } })`, using a separately declared
   compatible boot Disk as above. Confirm the deployed reference
   before using it: both an operator-enabled pool and storage-capable compute
