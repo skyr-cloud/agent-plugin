@@ -1108,9 +1108,13 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   changing only `rebootPolicy` never touches the running guest; an unchanged
   declaration (or a rollback to one) does nothing extra. A machine left stopped
   stays stopped — no deploy restarts it. **Power actions are not SCL**: `skyr
-  machines start|stop|reboot <name>` (or the buttons on the instance's web
+  machines start|stop|force-stop|reboot <name>` (or the buttons on the instance's web
   page) act on the machine immediately, authorized on `resource:StartMachine`,
-  `resource:StopMachine`, `resource:RebootMachine`. Stop leaves it stopped
+  `resource:StopMachine`, `resource:ForceStopMachine`, `resource:RebootMachine`.
+  Force-stop cuts power immediately without guest cooperation, even during an
+  in-flight stop or reboot: unsaved data may be lost and disks may need recovery.
+  It requires `resource:ForceStopMachine` independently of `StopMachine`.
+  Stop and force-stop leave it stopped
   whatever `rebootPolicy` says (it keeps its reservation); start boots it fresh
   at its declared size; reboot is a fresh boot of a running machine (a stopped
   one must be started). Outputs: `state` (`.running`, `.restarting`,
