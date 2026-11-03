@@ -1627,35 +1627,41 @@ rows listed under `--env staging` must be pasted back with `--env staging` (or
 with the environment spelled into the identifier). The region is always shown.
 `--format json` carries the full `qid` instead, which is what to script against.
 
-To reach a not-publicly-exposed port from the local machine, forward it over
-SSH. A port's ID as `skyr resources list` prints it pastes in verbatim; since a
-forward only ever targets a `Skyr/Container.Pod.Port`, the type may also be left
-out and the port named alone:
+To reach a pod's TCP listener from the local machine, forward it over SSH:
+`skyr port-forward <Pod> <remote-port> <local-port>`. Paste the pod's ID from
+`skyr resources list`, or leave the type and spec hash out:
 
 ```sh
-skyr port-forward stockholm:Skyr/Container.Pod.Port:web-3c6e542590f0cc60:8080/tcp 8080
-skyr port-forward web-3c6e542590f0cc60:8080/tcp 8080
-skyr port-forward web:8080 8080
+skyr port-forward stockholm:Skyr/ContainerNext.Pod:web-3c6e542590f0cc60 8080 8080
+skyr port-forward web-3c6e542590f0cc60 8080 8080
+skyr port-forward web 8080 8080
 ```
 
+Both forwarding and exec currently target `Skyr/ContainerNext.Pod`, the
+temporary type until the new container stack takes over `Skyr/Container`.
 The `-3c6e542590f0cc60` is a hash of the pod's spec: it changes whenever the pod
-does, so it can't be typed from memory. Because `port-forward` and `exec` each
-target exactly one type, they also match a name with the hash left out against
-what is actually running — the third line above. Anything that resolves exactly
-is used as it stands; a name several alive resources answer to is reported with
-the candidates listed as pasteable identifiers.
+does. Both commands match a name with the hash left out against existing pods
+— the third line above. Anything that resolves exactly is used as it stands;
+a name several resources answer to is reported with the candidates listed as
+pasteable identifiers.
 
-Anything else — a `Skyr/Container.Pod`, say — is refused before the tunnel is
-dialled: a declared port is what opens the pod's firewall, so it is the only
-thing a forward can land on. The edge to tunnel through is the git server of the
-checkout you run from; override with `--scs-address host:port`, and outside a
-checkout an explicitly set `--api-url`/`SKYR_API_URL` names the instance (port
+Forwarding is TCP-only, with a remote port from 1 to 65535. It connects to
+`127.0.0.1:<remote-port>` in the pod's shared network namespace, so a listener
+in any container can receive it, including one bound only to loopback. No
+`Pod.Port` declaration, public exposure or data NIC is needed. Permission is
+`resource:ForwardPodPort` on the **pod's QID**, not an individual port resource.
+A stopped or completed pod is refused with an error; forwarding does not
+restart it.
+
+The edge to tunnel through is the git server of the checkout you run from;
+override with `--scs-address host:port`, and outside a checkout an explicitly
+set `--api-url`/`SKYR_API_URL` names the instance (port
 22), falling back to `skyr.cloud:22`. `exec` picks its edge the same way, and
 every SSH connection the CLI makes is held to the host keys the instance's API
 publishes — a mismatch is a hard error naming both keys, never a prompt.
 
 To run a command — or get an interactive shell — inside a running container,
-without exposing a port:
+without exposing a port or requiring a data NIC:
 
 ```sh
 skyr exec web                           # a shell in the pod's only container
@@ -1673,7 +1679,8 @@ calling process is attached to one at both stdin and stdout (`--no-tty` and
 command's exit code is `skyr exec`'s, verbatim; every way `skyr exec` *itself*
 fails exits **255** instead, which is how a script tells "the command exited 1"
 from "the command never ran". A pod that was never created, has been destroyed,
-or is not yet placed on a node is refused before anything is dialled.
+or is stopped or completed is refused with an error. An unreachable guest
+also fails the session; neither operation restarts the pod.
 
 Exec is authorized on `resource:ExecInPod` against the pod — a separate and far
 broader grant than `resource:ForwardPodPort`, since a command inside a container
