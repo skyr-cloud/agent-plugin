@@ -598,6 +598,33 @@ an ordinary file until something passes it as this input, so the patterns may
 live anywhere or come from any file. Excluded files never reach the builder at
 all, and a line that isn't a valid pattern fails the build naming it.
 
+### Public images on VDC Pods (`ContainerNext`)
+
+The VDC-backed container stack currently uses the temporary
+`Skyr/ContainerNext` module (import it `as Container`); it has not replaced the
+legacy `Skyr/Container` examples elsewhere in this skill. A public OCI image,
+such as `docker.io/library/busybox:1.37` or
+`docker.io/library/busybox@sha256:<64 hexadecimal digits>`, requires both Pod
+`gateway:` and a data NIC attached to one of that gateway's networks. Prefer
+digest pins for reproducibility. Look up the installed `Skyr/ContainerNext`
+reference for exact `nics`/`gateway` inputs rather than reusing legacy
+`Container.Network` or `Pod.Port` declarations.
+
+The guest pulls anonymously over HTTPS through the Pod's data NIC and the
+user's VDC gateway. There is no platform pull-through/cache or support for
+private third-party registry credentials. Gateway egress accounting belongs to
+the VDC Billing project; this does not mean VDC-ledger billing has shipped.
+Only the instance's exact `cr.<apex>` host uses the platform service-link mirror;
+its images must be digest-pinned and work even on NIC-less Pods with no gateway.
+Lookalike hosts and public references cannot use that mirror as a proxy.
+
+Required `Pod.scratch` is bytes for unpacked layers, writable container uppers
+and scratch-backed volumes. Skyr does no sizing or auto-growth. Image-preparation
+`ENOSPC` is a terminal startup failure, not a silent retry loop; the Pod agent log
+names a lower bound for the required capacity. Increase `scratch` and roll the
+Pod to recover. These rules apply to `ContainerNext`, not the legacy examples
+below.
+
 ### Open ports — how ingress works
 
 Every pod gets a **public, internet-routable IPv6** (`pod.address`). By
