@@ -621,8 +621,9 @@ Lookalike hosts and public references cannot use that mirror as a proxy.
 Required `Pod.scratch` is bytes for unpacked layers, writable container uppers
 and scratch-backed volumes. Skyr does no sizing or auto-growth. Image-preparation
 `ENOSPC` is a terminal startup failure, not a silent retry loop; the Pod agent log
-names a lower bound for the required capacity. Increase `scratch` and roll the
-Pod to recover. These rules apply to `ContainerNext`, not the legacy examples
+names a lower bound for the required capacity and an incident opens. A Pod that
+has never been ready keeps `health` pending, not `.failing`. Increase `scratch`
+and roll the Pod to recover. These rules apply to `ContainerNext`, not the legacy examples
 below.
 
 ### Open ports — how ingress works
