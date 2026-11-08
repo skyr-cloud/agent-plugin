@@ -598,15 +598,15 @@ an ordinary file until something passes it as this input, so the patterns may
 live anywhere or come from any file. Excluded files never reach the builder at
 all, and a line that isn't a valid pattern fails the build naming it.
 
-### Public images on VDC Pods (`ContainerNext`)
+### Public images on VDC Pods
 
-The VDC-backed container stack currently uses the temporary
-`Skyr/ContainerNext` module (import it `as Container`); it has not replaced the
-legacy `Skyr/Container` examples elsewhere in this skill. A public OCI image,
+`Skyr/Container` Pods run on the VDC; some examples elsewhere in this skill
+still show the legacy surface (`Container.Network`, `Pod.Port`,
+`InternetAddress`) and are being rewritten. A public OCI image,
 such as `docker.io/library/busybox:1.37` or
 `docker.io/library/busybox@sha256:<64 hexadecimal digits>`, requires both Pod
 `gateway:` and a data NIC attached to one of that gateway's networks. Prefer
-digest pins for reproducibility. Look up the installed `Skyr/ContainerNext`
+digest pins for reproducibility. Look up the installed `Skyr/Container`
 reference for exact `nics`/`gateway` inputs rather than reusing legacy
 `Container.Network` or `Pod.Port` declarations.
 
@@ -623,8 +623,7 @@ and scratch-backed volumes. Skyr does no sizing or auto-growth. Image-preparatio
 `ENOSPC` is a terminal startup failure, not a silent retry loop; the Pod agent log
 names a lower bound for the required capacity and an incident opens. A Pod that
 has never been ready keeps `health` pending, not `.failing`. Increase `scratch`
-and roll the Pod to recover. These rules apply to `ContainerNext`, not the legacy examples
-below.
+and roll the Pod to recover.
 
 ### Open ports — how ingress works
 
@@ -1660,13 +1659,12 @@ To reach a pod's TCP listener from the local machine, forward it over SSH:
 `skyr resources list`, or leave the type and spec hash out:
 
 ```sh
-skyr port-forward stockholm:Skyr/ContainerNext.Pod:web-3c6e542590f0cc60 8080 8080
+skyr port-forward stockholm:Skyr/Container.Pod:web-3c6e542590f0cc60 8080 8080
 skyr port-forward web-3c6e542590f0cc60 8080 8080
 skyr port-forward web 8080 8080
 ```
 
-Both forwarding and exec currently target `Skyr/ContainerNext.Pod`, the
-temporary type until the new container stack takes over `Skyr/Container`.
+Both forwarding and exec target `Skyr/Container.Pod`.
 The `-3c6e542590f0cc60` is a hash of the pod's spec: it changes whenever the pod
 does. Both commands match a name with the hash left out against existing pods
 — the third line above. Anything that resolves exactly is used as it stands;
