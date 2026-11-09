@@ -545,14 +545,33 @@ let pod = Container.Pod({
 })
 ```
 
-`Image` builds from a directory in the repo and pushes to the instance
-registry; `image.url` is digest-pinned. Public images
-(`"docker.io/library/caddy:2"`) work as `image` values given a gateway and data
-NIC (below). `containers` is a **name-keyed map**
+`Image` builds from a directory in the repo and pushes to this instance's
+registry as `cr.<apex>/<org>/<repo>/<name>` (lowercased; one repository shared
+by every environment of the repo, each build also moving the environment's tag,
+e.g. `:main`); `image.url` is the digest-pinned reference and `image.digest` the
+manifest digest. A Pod pulls such an image through the platform's own link, so
+it needs no NIC or gateway — which is why the pod above has neither. Public
+images (`"docker.io/library/caddy:2"`) work as `image` values only given a
+gateway and data NIC (below). `containers` is a **name-keyed map**
 (`#{ "name": { ... } }`); the key names the container in logs and, for
 containers that can finish, in the pod's `exitCodes` output. `cpu` and
 `memory` are **required** on every container — both are hard limits. Containers in the same pod share a network namespace, so
-siblings reach each other on `localhost`.
+siblings reach each other on `localhost`. There are no health probes: a
+container counts as working while its process runs.
+
+**What a pod costs.** A Pod runs as its own hidden virtual machine, sized from
+its claims: CPU is the sum of the containers' `cpu` plus a fixed 250 m guest
+allowance (the containers may sum to at most 31750 m), memory is the sum of
+their `memory` plus a guest allowance (for the current guest 544 MiB plus an
+eighth of the containers' total, rounded up to whole MiB). The allowances are
+fixed, not configurable, and part of what the pod reserves — a pod is charged as
+that machine's VDC usage (CPU and memory reservation including the allowance,
+`scratch` as disk space, mounted Disks, gateway egress), by VDC billing that has
+not shipped yet; nothing about a pod is priced today, and its usage charts are a
+debugging surface, not a ledger. A pod keeps the guest version (and allowance)
+it was created with: there are **no forced guest upgrades** — a pod picks up a
+newer guest only when it rolls over to a new identity. The machine itself is
+invisible: no power actions, no console, nothing to address but the pod.
 
 **Running something other than the image's default.** A container starts its
 image's own `ENTRYPOINT`/`CMD` unless it says otherwise. The optional
@@ -608,13 +627,42 @@ the VDC Billing project; this does not mean VDC-ledger billing has shipped.
 Only the instance's exact `cr.<apex>` host uses the platform service-link mirror;
 its images must be digest-pinned and work even on NIC-less Pods with no gateway.
 Lookalike hosts and public references cannot use that mirror as a proxy.
+Pulling from `cr.<apex>` needs `oci:Pull` on the normalized repository
+(`acme/shop/web`), which the default `Super` deployment role has.
+
+The same split governs **image builds**. Every build starts cold on a hidden
+builder pod (no build cache). Without `network`, the builder reaches only this
+instance's registry: every `FROM` must be a digest-pinned `cr.<apex>` image, and
+a public `FROM` fails inside BuildKit with a network error. Give the build a
+network and a gateway serving it (declared as in the next section) to pull
+public bases and let `RUN` steps reach the internet:
+
+```scl
+let image = Container.Image({
+    name: "web",
+    context: ./app,
+    containerfile: Path.read(./app/Containerfile),   // FROM docker.io/library/node:22
+    network: lan,
+    gateway: gw,
+})
+```
+
+`name`, `context`, `containerfile`, `ignorefile`, `network` and `gateway` are
+the build's identity; `cpu`/`memory`/`scratch`/`timeout` only size it
+(defaults 1500 m, 2 GiB, 8 GiB, 45 minutes; at most 2 hours). Publishing needs
+`oci:Push` on the repository and `oci:Tag` on `<repository>:<env tag>`, and
+builder egress the same `resource:AttachPodToNetwork` /
+`resource:RoutePodThroughGateway` grants a pod needs. Pulls are anonymous;
+private third-party registries are not supported.
 
 Required `Pod.scratch` is bytes for unpacked layers, writable container uppers
 and scratch-backed volumes. Skyr does no sizing or auto-growth. Image-preparation
 `ENOSPC` is a terminal startup failure, not a silent retry loop; the Pod agent log
 names a lower bound for the required capacity and an incident opens. A Pod that
 has never been ready keeps `health` pending, not `.failing`. Increase `scratch`
-and roll the Pod to recover.
+and roll the Pod to recover. Scratch is host-local: it survives a reboot on the
+same host and is blank after the pod moves (images are pulled again), so it is
+never durable storage.
 
 ### Networks, gateways and ports — how ingress works
 
@@ -661,8 +709,9 @@ let https = gw.Port({
   client's address, so the target must route replies back through the gateway
   (`gateway:` above); `.full` also rewrites the source, for a target that is
   not routed through it.
-- The listener must bind the Pod's data address or a wildcard (`0.0.0.0` for an
-  IPv4 port, `[::]` for IPv6).
+- The listener must bind the Pod's data address or a wildcard address of the
+  port's family (`0.0.0.0` for IPv4, `[::]` for IPv6); there is no address
+  translation between families.
 - **Any NIC or gateway change rolls the Pod over**: the replacement gets new
   MACs and addresses, and resources built from `pod.nics` (ports, DNS records)
   re-point automatically.
@@ -894,43 +943,28 @@ always succeeds, even after the grant is gone.
 ## Restart, jobs, and scheduled runs
 
 There is **no Job or CronJob resource** — run-to-completion and scheduling are
-per-container policy on an ordinary `Container.Pod`. Each container takes five
+per-container policy on an ordinary `Container.Pod`. Each container takes four
 optional policy fields:
 
 - **`restart`** — `.always` (default: restart on any exit — crash recovery for
   services and sidecars), `.onFailure` (restart only on a non-zero exit; a zero
   exit is final — retry-until-success), or `.never` (any exit is final).
-  Restarts run in place with automatic exponential backoff. The default means
-  every pod gets crash recovery for free.
-- **`keepAlive`** — `Bool`, default `true`. The pod is **reaped** (node
-  resources freed) once every keep-alive container has terminated. At least one
-  container must keep the pod alive (else rejected at eval). A `keepAlive: false`
-  sidecar is stopped when the pod reaps.
+  Restarts run in place with automatic exponential backoff (500 ms, doubling
+  to a 30 s cap). The default means every pod gets crash recovery for free.
+- **`keepAlive`** — `Bool`, default `true`. The pod **finishes** once every
+  keep-alive container has terminated: its machine stops, but **keeps its CPU,
+  memory and scratch reservation until the Pod resource is destroyed** (stopped
+  is not deleted). At least one container must keep the pod alive (else
+  rejected at eval). A `keepAlive: false` sidecar is stopped when the pod
+  finishes.
 - **`maxRetries`** — `Int?`, valid only with `.onFailure`; absent means retry
   forever, `N` permits `N + 1` executions before the last failing exit is final.
 - **`timeout`** — `Time.Duration?`, a per-attempt kill budget. A
   `Time.Duration` is a fixed length (a multiple of `Time.second`/`Time.day`/…);
   a calendar-month span is a `Time.CalendarDuration` and does not type-check
   here.
-- **`probe`** — `Probe?`, absent by default: how Skyr asks a container whether
-  it is still *serving*, for a workload that can stop serving without exiting.
-  `{ kind: .http({ port, path? }) }` (2xx/3xx passes) or
-  `{ kind: .tcp({ port }) }` (a completed connection passes), plus optional
-  `initialDelay`/`interval`/`timeout`/`startupWindow` (each a `Time.Duration`,
-  so a fixed length, and positive) and `failureThreshold` (a positive count),
-  each defaulted by Skyr when omitted. The check runs *from inside the pod*, so the
-  port need not be published through a gateway — and usually should not be. **One
-  probe covers startup, readiness and liveness, because its role changes with
-  the container's phase**: before its first success it is readiness (a failure
-  kills nothing, so a slow start is safe; a container still failing after
-  `startupWindow` is restarted as hung), after it is liveness
-  (`failureThreshold` failures in a row stop the container). Its first success
-  is also what the pod's readiness waits for, which is what a `ReplicaSet`
-  replica built from the pod stands on. A probe
-  never restarts anything by a route of its own — it stops the container and
-  `restart` decides, so a workload that hangs sick gets the same backoff,
-  retry cap and crash-loop judgment as one that exits sick. Adding, changing
-  or removing a probe **recreates the pod**.
+- There is **no `probe`**: health probes are not supported. A container is
+  judged by its process — running, restarting, or finished.
 
 A **job** is just a pod whose container uses `.onFailure`/`.never`; job-ness is
 implied by configuration, never declared.
@@ -939,9 +973,11 @@ implied by configuration, never declared.
 import Skyr/Container
 import Std/Time
 
-// A one-shot migration: retries until it exits 0, then the pod reaps.
+// A one-shot migration: retries until it exits 0, then the pod finishes. Its
+// machine stops but keeps its reservation until the Pod is destroyed.
 let migrate = Container.Pod({
     name: "migrate",
+    scratch: 1073741824,
     containers: #{ "migrate": {
         image: migrateImage.url,
         cpu: 500,
@@ -966,7 +1002,11 @@ gate with plain control flow, keying the specific container:
 // so — it is a branch that could have declared and did not, which holds the
 // rollout exactly as a resource with a pending input does.
 let serve = if (migrate.exitCodes["migrate"] == 0)
-    Container.Pod({ name: "serve", containers: #{ "web": { image: webImage.url, cpu: 1000, memory: 536870912 } } })
+    Container.Pod({
+        name: "serve",
+        scratch: 1073741824,
+        containers: #{ "web": { image: webImage.url, cpu: 1000, memory: 536870912 } },
+    })
 ```
 
 The gate lives in the `if` condition, not the pod's inputs, so `serve`'s
@@ -991,6 +1031,7 @@ the previous destroyed:
 let tick = Time.now(Time.hour)
 Container.Pod({
     name: "hourly-{tick.epochMillis}",
+    scratch: 1073741824,
     containers: #{ "report": { image: reportImage.url, cpu: 500, memory: 268435456, restart: .onFailure } },
 })
 ```
@@ -999,8 +1040,10 @@ Accepted limits: concurrency is **Replace only** (a tick boundary kills a still-
 running previous pod — keep `timeout` under the interval), **missed ticks are
 skipped** (no catch-up), a pod's recorded history **evaporates one window
 later**, and boundaries are **UTC only**. Completion is **at-least-once**, so
-**jobs must be idempotent** — a node death before completion is recorded re-runs
-the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
+**jobs must be idempotent** — a guest reboot or host failure before completion
+is recorded re-runs the job. A retained finished pod also retains its
+reservation, so cron windows are reclaimed only as their pods are destroyed.
+Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 
 ## Other capabilities
 
@@ -1166,9 +1209,12 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
 
 - **Volumes.** `Container.ephemeralVolume({ files, size, name, medium })` is
   Pod-local storage living and dying with the pod: `medium: .memory` (the
-  default, guest tmpfs; `size` caps it) or `.scratch` (shares `Pod.scratch`, no
-  `size`, literal seeds only). It is optionally seeded with
-  `files: #{ "<path relative to the mount root>": .literal("…") }` — values are
+  default, guest tmpfs; `size` caps it, at least 1 MiB and the seed's size,
+  and pages a container writes count against **that container's `memory`
+  limit**) or `.scratch` (a directory on the pod's scratch, sharing
+  `Pod.scratch`; no `size`, literal seeds only; survives a same-host reboot,
+  blank after the pod moves). `medium` is part of the pod's identity. It is
+  optionally seeded with `files: #{ "<path relative to the mount root>": .literal("…") }` — values are
   the same two arms as `env` (`.literal(…)`/`.secret(ref)`, secrets only in
   memory volumes), and a bare string is a type error (see the Caddy example).
   **Mounting a seeded volume is how files reach a container** — there is no
@@ -1190,8 +1236,9 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   `ENOSPC` when it is full). By default it has the Docker-default capability set
   and minimal private devices. `privileged: true` grants the full capability
   set, the VM's `/dev` — `/dev/kvm` included, so a nested hypervisor runs — and
-  a writable delegated cgroup subtree for nested runtimes. It is safe to offer
-  because the Pod is its own VM, which is already the tenant's; there are no
+  a writable delegated cgroup subtree for nested runtimes. Neither mode installs
+  a seccomp filter, and all containers share the VM's network namespace. It is
+  safe to offer because the Pod is its own VM, which is already the tenant's; there are no
   finer knobs. Changing it **recreates** the pod. Declare a `Storage.Disk` mount
   for anything that must persist.
 - **Secrets.** Every secret is **owned by a resource** and sealed in the
@@ -1220,10 +1267,15 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   var — TLS keys, keytabs, anything binary); an `HTTP.Resource` request's
   header, query and form values, plus any depth of a `.json` body; and a
   Terraform provider's marked credential fields (`Skyr/AWS` `accessKey`/
-  `secretKey`). The plaintext is resolved inside the platform at pod
-  materialization — or, for a request, immediately before it is sent — and
-  never enters git, the stored resource inputs, or any log; a volume seeded
-  with any secret is mounted owner-only (`0700`/`0600`, overridable with an
+  `secretKey`). For a pod, only the references are stored; each is resolved
+  when a container starts (and again on a live re-projection) and handed to the
+  guest over its private platform connection, living only in guest memory
+  (environment, memory volumes) — never on scratch. For a request it is resolved
+  immediately before it is sent. Plaintext never enters git, the stored
+  resource inputs, or any log Skyr writes (a workload that prints its own
+  secrets is not redacted); a missing `secret:View` fails the pod's
+  creation with an error naming the secret, and a secret that cannot be
+  resolved later keeps its container from starting, retried with backoff; a volume seeded with any secret is mounted owner-only (`0700`/`0600`, overridable with an
   explicit `permissions`) under the mount's `userId`/`groupId`, root by
   default. **IAM:** `secret:View` is the only secret verb — it covers
   consuming (resolving a ref at materialization), listing metadata, and
@@ -1259,8 +1311,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   the next reconcile pass as a new version QID: in `env` the pinned version is
   part of the pod's identity, so the pod is **recreated**; in a read-only
   volume seed the content is identity-excluded, so the new plaintext is written
-  into the running pod **with no restart** — except when it outgrows the pod's
-  disk claim, and except for a writable mount's seed, both of which recreate.
+  into the running pod **with no restart** — except for a volume mounted
+  writable anywhere in the pod, whose seed is identity and recreates it.
   Live delivery is not atomic and a process that reads its files once at
   startup never sees it: bump the volume's `name` to force a fresh pod. Old
   versions stay resolvable; there is no version history or rollback.
@@ -1447,9 +1499,8 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   it is made of has materialized — and where a resource can say whether it
   *works*, materialized includes having been seen working: a pod counts once
   its addresses are allocated, its finishable containers have finished, and
-  every container that keeps it alive is either running and answering its
-  `probe` where it declares one, or finished with the work it was given (a
-  clean exit for an `.onFailure` job, any exit for a `.never` one — a job that
+  every container that keeps it alive is either running or finished with the
+  work it was given (a clean exit for an `.onFailure` job, any exit for a `.never` one — a job that
   gave up does not count). So returning the whole pod from `replica` is what
   makes a replacement that comes up broken **hold** the roll (old generation
   still serving, a `Crash` incident saying why) instead of retiring a replica
@@ -1624,18 +1675,26 @@ user-visible consequence, least to most severe:
 The badge on a deployment or resource is the **worse** of two readings: what
 its open incidents say about Skyr's ability to operate it, and what the last
 check said about whether the live thing is working. For a pod the second is a
-real judgment: `Crash` means a container is crash-looping, has stopped
-answering its probe, or is a job that spent every retry without succeeding, and
-the incident message names that container and what is wrong with it. Three
-readings that surprise people: a pod lost with its node or sandbox is **not** a
-crash (it is rebuilt silently — `Crash` is for infrastructure that is fine
-under a workload that is not); a **degraded** judgment opens no incident and
-*closes* open ones, because a pod that is merely restarting too much is still
-serving; and a verdict is held until something disproves it, so a probe-bearing
-service that crashed once while coming up reads down until its probe actually
-passes, silence never counting as recovery. A pod that has never served is
-reported broken *and* does not count as standing for a `ReplicaSet` — that is
-what explains a roll that is not advancing.
+real judgment, mirrored in its `health` output (`.healthy`/`.degraded`/
+`.failing`, pending until the pod has first been ready):
+
+- **Down** (`.failing`, a `Crash` incident): a container could not start — an
+  image that would not pull, a secret that would not resolve (both retried with
+  backoff, reading down meanwhile), or scratch exhausted (terminal); a
+  keep-alive `.onFailure` job that spent every retry without a clean exit (it
+  stays down after the pod finished); a mounted Disk claimed by
+  another pod or lost; a pod whose machine stopped before its final status was
+  recorded. The message points at the pod log for the details.
+- **Degraded** (`.degraded`, no incident, and it *closes* open ones): a
+  container in restart backoff after a failure — so a crash-looping `.always`
+  service reads degraded, not down, since it is being restarted; a guest that
+  is not responding; a guest that has not yet accepted the current
+  configuration.
+
+A pod whose machine disappeared is re-created silently rather than reported as
+a crash. A pod that has never been ready keeps `health` pending even while an
+incident reports it broken, and does not count as standing for a `ReplicaSet` —
+that is what explains a roll that is not advancing.
 
 An **uncaught SCL exception** during evaluation — unwrapping a `nil`, an
 out-of-range constructor input, any top-level `raise` your config doesn't `catch` —
@@ -1688,7 +1747,13 @@ Incidents are listed on the website at `/<org>/~i` (the CLI doesn't surface
 them). For diagnosis: `skyr deployments logs` shows evaluation and rollout
 errors (a `BadConfiguration` usually reproduces locally with `skyr check`, a
 `TestFailure` with `skyr test`); `skyr resources logs Skyr/Container.Pod:web`
-shows a specific resource, including container output from pods.
+shows a specific resource. A pod's log carries three sources: container
+stdout/stderr (`source=pod`, with `stream` and `container_name`), the guest
+agent's own messages (`source=agent`: image pulls, OOM kills, Disk and scratch
+formatting and growth, Disk ejects, restart backoff, scratch exhaustion with
+the capacity it needed), and the hidden machine's host events. The guest buffers
+logs boundedly and drops the oldest rather than block a workload, marking the
+gap.
 
 ## Looking up documentation
 

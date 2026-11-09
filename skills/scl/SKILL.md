@@ -685,8 +685,8 @@ let db = Knob.Secret({ name: "db-password", description: "Primary DB password" }
 `Knob.Secret` takes `name` and an optional `description`, and **no `default`**
 (it would be plaintext in git), so `value` is pending until set, gating
 dependents like any defaultless knob. Hand a ref to something that resolves it
-at deploy time: container `env` and volume `files` seeds, `HTTP.Resource`
-request parts, and Terraform provider credentials take
+at deploy time: container `env` and memory-medium volume `files` seeds,
+`HTTP.Resource` request parts, and Terraform provider credentials take
 `enum { .literal(Str), .secret(Secret.Ref) }`, so you write
 `.secret(db.value)` or `.secret(key.pem)` — never `.secret("…qid…")`. Import
 `Std/Secret` only when you need to name the type (`let r: Secret.Ref = …`).
@@ -744,7 +744,7 @@ placeholder identity; `Path.read` still reads the package's own files. So
 hoist the logic worth checking into pure functions over plain values — deriving
 a name, assembling an env map, validating a configuration — and let the
 resource declarations pass the results in. Anything that has to *happen* at
-deploy time (a probe, a smoke job) is not a test's business.
+deploy time (a smoke request, a migration job) is not a test's business.
 
 ## Looking up documentation
 
