@@ -784,7 +784,7 @@ let pod = Container.Pod({
             image: "docker.io/library/caddy:2",
             cpu: 250,
             memory: 134217728,
-            mounts: #{ "/etc/caddy": { volume: caddyfile, readOnly: true } },
+            mounts: #{ "/etc/caddy": { source: .volume(caddyfile), readOnly: true } },
         },
     },
 })
@@ -847,7 +847,7 @@ let tls = Container.ephemeralVolume({
 })
 
 // …inside the terminating container: reads /run/tls/tls.{crt,key}
-mounts: #{ "/run/tls": { volume: tls, readOnly: true, userId: 1000 } }
+mounts: #{ "/run/tls": { source: .volume(tls), readOnly: true, userId: 1000 } }
 ```
 
 A volume carrying any `.secret` is mounted owner-only (`0700` root dir, `0600`
@@ -1219,14 +1219,14 @@ Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   memory volumes), and a bare string is a type error (see the Caddy example).
   **Mounting a seeded volume is how files reach a container** — there is no
   pod-level file input. Mount via a container's `mounts` dict keyed by absolute
-  path: `#{ "/data": { volume: v } }`, with optional
+  path: `#{ "/data": { source: .volume(v) } }`, with optional
   `readOnly`/`subPath`/`permissions`/`userId`/`groupId`; every mount of one
   volume must agree on mode and owner. Seed content of a volume that is only
   ever mounted read-only is re-projected live when it changes; any other volume
   or mount change replaces the pod. For durable data mount a
-  `Storage.Disk` from the Pod's region instead: `#{ "/data": { disk: data } }`
-  (exactly one of `volume`/`disk`), which needs `resource:AttachPodToDisk` on
-  the Disk. Several containers may mount one Disk; on rollover SCO ejects it
+  `Storage.Disk` from the Pod's region instead:
+  `#{ "/data": { source: .disk(data) } }`, which needs
+  `resource:AttachPodToDisk` on the Disk. Several containers may mount one Disk; on rollover SCO ejects it
   from the old Pod before the new one starts, and a guest that does not release
   it blocks the successor rather than being force-stopped. Removing a Disk's
   declaration destroys its data (see Raw block disks above).
