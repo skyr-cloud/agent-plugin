@@ -4,10 +4,10 @@ description: >-
     How deployment to Skyr works: pushing to the skyr git remote, environments
     and the deployment lifecycle, pushing a deployment for approval and
     approving or rejecting one, rolling a deployment back, exposing pods to
-    the internet (ports, InternetAddress, DNS zones), private networking and
-    routing between networks, sharing networks, volumes and addresses across
-    repositories, first-party plugin capabilities, approving the held deletion
-    of a durable resource such as a persistent volume, checking rollout status
+    the internet (networks, gateways, ports, DNS zones), private networking,
+    sharing networks, gateways and disks across repositories, first-party
+    plugin capabilities, approving the held deletion of a durable resource,
+    checking rollout status
     and incidents, and reaching into a running pod (port forwarding, running a
     command or a shell in a container). Use when deploying to Skyr, wiring a
     repository to a Skyr instance, exposing a service publicly, connecting
@@ -79,9 +79,8 @@ to deploy resources.
   likewise does not inherit a proposal's backoff. If a deployment was failing
   only because its resources were failing, their recovery triggers a fresh
   pass promptly so its incident closes without waiting out the backoff.
-  A **durable** resource — `PersistentVolume` is the
-  first-party one — is the exception: its destruction is *held* until a person
-  approves that particular deletion, and the teardown does not finish until
+  A **durable** resource is the exception: its destruction is *held* until a
+  person approves that particular deletion, and the teardown does not finish until
   somebody does (see "Durable resources: deletion waits for a person"). A primary
   ref reappears on the next fetch with retained source, without redeploying;
   choose a different primary to stop retaining it.
@@ -367,14 +366,12 @@ skyr deployments approve main             # or: reject main
 
 Some resources hold data nothing in a configuration can put back, and those are
 **durable**: Skyr never destroys one on a reconcile pass's own authority.
-`Container.PersistentVolume` is the first-party durable type — its contents are
-the volume. Durability is a per-resource marker, answered on every transition
-like volatility and stickiness, so it is a fact about the resource rather than
-about its type; the web shows it as a marker on the resource. A volume that
-should not be held that way declares `deletionProtection: false`, and is then
-destroyed like any other resource; flipping the field is an ordinary in-place
-update that leaves the data alone and, like every update, withdraws a request
-already waiting on the volume. `skyr resources
+Among first-party types, `Skyr/HTTP.Resource` is durable for the window before
+it has stored the request that deletes its remote side; `Storage.Disk` is
+**not** durable (removing it destroys its data with no hold). Durability is a
+per-resource marker, answered on every transition like volatility and
+stickiness, so it is a fact about the resource rather than about its type; the
+web shows it as a marker on the resource. `skyr resources
 list` carries no durability marker — what it shows is where a deletion has got
 to: a `DELETION` column reading `PENDING` or `APPROVED`, empty for a resource
 holding none (`--format json` carries a `deletion_approval` object).
@@ -396,8 +393,8 @@ holding none (`--format json` carries a `deletion_approval` object).
 - **How to approve it.**
 
   ```sh
-  skyr resources approve-deletion stockholm:Skyr/Container.PersistentVolume:data
-  skyr resources approve-deletion Skyr/Container.PersistentVolume:data --yes
+  skyr resources approve-deletion stockholm:Skyr/HTTP.Resource:subscription
+  skyr resources approve-deletion Skyr/HTTP.Resource:subscription --yes
   ```
 
   It prints what is held (resource, environment, when it was first held, the
@@ -539,6 +536,7 @@ let image = Container.Image({
 
 let pod = Container.Pod({
     name: "web",
+    scratch: 1073741824,   // bytes for image layers and writable roots; required
     containers: #{ "web": {
         image: image.url,
         cpu: 500,          // millicores; hard limit and reservation
@@ -548,8 +546,9 @@ let pod = Container.Pod({
 ```
 
 `Image` builds from a directory in the repo and pushes to the instance
-registry; `image.url` is digest-pinned. Public images (`"caddy:2"`) work
-directly as `image` values. `containers` is a **name-keyed map**
+registry; `image.url` is digest-pinned. Public images
+(`"docker.io/library/caddy:2"`) work as `image` values given a gateway and data
+NIC (below). `containers` is a **name-keyed map**
 (`#{ "name": { ... } }`); the key names the container in logs and, for
 containers that can finish, in the pod's `exitCodes` output. `cpu` and
 `memory` are **required** on every container — both are hard limits. Containers in the same pod share a network namespace, so
@@ -566,10 +565,7 @@ a service and a migration, and the right choice for a `CMD`-only image). Nothing
 shell, so a pipeline is `.command(["/bin/sh", "-c", "a | b"])`, and an empty
 argv is rejected. An argv takes no `.secret(…)` and is stored, logged and
 hashed verbatim — pass credentials through `env`. `workingDirectory: Str?`
-replaces the image's `WORKDIR` and must be an **absolute** path; a tenant
-container's rootfs is **read-only** (unless it sets `privileged: true` — see
-Privilege under Other capabilities), so the directory must exist in the image
-or be one of its mount paths. Both are part of the pod's identity, so changing
+replaces the image's `WORKDIR` and must be an **absolute** path. Both are part of the pod's identity, so changing
 either recreates the pod.
 
 ```scl
@@ -598,17 +594,12 @@ an ordinary file until something passes it as this input, so the patterns may
 live anywhere or come from any file. Excluded files never reach the builder at
 all, and a line that isn't a valid pattern fails the build naming it.
 
-### Public images on VDC Pods
+### Public images and scratch
 
-`Skyr/Container` Pods run on the VDC; some examples elsewhere in this skill
-still show the legacy surface (`Container.Network`, `Pod.Port`,
-`InternetAddress`) and are being rewritten. A public OCI image,
-such as `docker.io/library/busybox:1.37` or
+A public OCI image, such as `docker.io/library/busybox:1.37` or
 `docker.io/library/busybox@sha256:<64 hexadecimal digits>`, requires both Pod
-`gateway:` and a data NIC attached to one of that gateway's networks. Prefer
-digest pins for reproducibility. Look up the installed `Skyr/Container`
-reference for exact `nics`/`gateway` inputs rather than reusing legacy
-`Container.Network` or `Pod.Port` declarations.
+`gateway:` and a data NIC attached to one of that gateway's networks (next
+section). Prefer digest pins for reproducibility.
 
 The guest pulls anonymously over HTTPS through the Pod's data NIC and the
 user's VDC gateway. There is no platform pull-through/cache or support for
@@ -625,70 +616,65 @@ names a lower bound for the required capacity and an incident opens. A Pod that
 has never been ready keeps `health` pending, not `.failing`. Increase `scratch`
 and roll the Pod to recover.
 
-### Open ports — how ingress works
+### Networks, gateways and ports — how ingress works
 
-Every pod gets a **public, internet-routable IPv6** (`pod.address`). By
-default it is inert for ingress: the pod's firewall only accepts connections
-from internal networks the pod is attached to, and the IPv6 serves egress.
-Until the backend has allocated it, `pod.address` reads as pending, so
-resources built from it defer. Opening a port changes that:
-
-```scl
-let http = pod.Port({ port: 8080, public: true })
-// http.address is "[<pod-ipv6>]:8080". Until the pod's address has been
-// allocated it reads as pending, so resources built from it defer.
-```
-
-`public: true` opens the port to the internet — both on the pod's IPv6 and
-on any bound IPv4 address (next section). Without it the port only accepts
-traffic from attached internal networks.
-
-`protocols` defaults to `[.tcp]`; `.udp` is the other member. One call is one
-opening, so a service that shares a port number across transports names them
-together rather than declaring the port twice:
+A Pod has no network of its own beyond the platform service link (DNS, this
+instance's registry, exec and port-forward). Networking is `Skyr/Net`: Pods
+attach NICs to a private `Net.Network`, route their internet traffic through a
+`Net.Gateway` on one of those networks, and accept internet traffic only
+through the gateway's declared ports:
 
 ```scl
-pod.Port({ port: 443, protocols: [.tcp, .udp], public: true })  // HTTP/2 + HTTP/3
-pod.Port({ port: 53, protocols: [.tcp, .udp] })                 // DNS
-```
+import Skyr/Net
+import Std/Option
 
-Order and repeats don't matter — the opening is the set — and an empty list is
-refused rather than treated as the default.
-
-### A stable public IPv4
-
-The pod's IPv6 changes when the pod is replaced (its identity hashes its
-configuration). For a stable entry point, allocate an `InternetAddress` and
-route it to the pod:
-
-```scl
-let ip = Container.InternetAddress({ name: "front-door" })
+let lan = Net.Network({ name: "lan", ipv4: "10.42.0.0/24" })
+let gw = Net.Gateway({ name: "gw", networks: #{ "lan": lan } })
 
 let pod = Container.Pod({
     name: "web",
+    scratch: 1073741824,
     containers: #{ "web": { image: image.url, cpu: 500, memory: 268435456 } },
-    internetAddress: ip,
+    nics: #{ "lan": { network: lan } },
+    gateway: gw,
+})
+
+let https = gw.Port({
+    protocol: .tcp,
+    port: 443,
+    target: Option.unwrap(pod.nics["lan"]?.ipv4),
+    targetPort: 8443,
 })
 ```
 
-`ip.address` is a public IPv4 that survives pod replacement and redeploys.
-Like `pod.address` it reads as pending until the allocation lands.
-An address routes to **exactly one pod at a time, anywhere in Skyr** — two
-pods in one program naming it is an eval-time error, and a pod elsewhere
-trying to take an address another pod already holds fails the deploy, naming
-the holder. (Replacing a bound pod is fine: the successor in the same
-environment takes the claim over.) The claim is released when the bound pod
-stops naming the address or is deleted. Binding needs
-`resource:BindInternetAddress` on the address, and the pod must be in the
-address's region. The pod's firewall still applies: only `public: true` ports
-accept internet traffic on the address.
+- `nics` is keyed by a name of your choosing (1–32 letters, digits, `-`, `_`
+  or `.`); `pod.nics["lan"]` carries the allocated `ipv4`/`ipv6`/`mac` and reads
+  as pending until allocated, so the port above defers. Up to 12 NICs, on
+  non-overlapping networks in the Pod's region. All containers share the Pod's
+  network namespace; there is **no Pod firewall**.
+- `gateway:` gives the Pod default routes through the gateway on its NIC on one
+  of the gateway's networks (the lowest matching key). Without it there is no
+  internet egress.
+- `gw.Port` forwards one public port of the gateway's public address of the
+  target's family to an address on one of its networks; one port per (family,
+  protocol, port). The default `addressTranslation: .destinationOnly` keeps the
+  client's address, so the target must route replies back through the gateway
+  (`gateway:` above); `.full` also rewrites the source, for a target that is
+  not routed through it.
+- The listener must bind the Pod's data address or a wildcard (`0.0.0.0` for an
+  IPv4 port, `[::]` for IPv6).
+- **Any NIC or gateway change rolls the Pod over**: the replacement gets new
+  MACs and addresses, and resources built from `pod.nics` (ports, DNS records)
+  re-point automatically.
+- Permissions: `resource:AttachPodToNetwork` on each network,
+  `resource:RoutePodThroughGateway` and `resource:PublishGatewayPort` on the
+  gateway, `resource:AttachGatewayToNetwork` on each network the gateway joins.
 
-**Serve public traffic on IPv6.** A pod's public entry point is its IPv6
-address, and a bound `InternetAddress` (public IPv4) is delivered to the pod
-translated to that IPv6. So a workload that must be reachable from the internet
-has to listen on IPv6 — bind `[::]` (or dual-stack), not only `0.0.0.0`. A
-process listening on IPv4 `0.0.0.0` alone will not receive public traffic,
-including traffic to a bound `InternetAddress`.
+The gateway's public addresses (`gw.publicIpv4`, an Elastic IP, and
+`gw.publicIpv6` when a network has IPv6) **stick until the gateway is
+deleted**, across Pod replacement and redeploys — they are the stable entry
+point to put in DNS. Full reference: the `Skyr/Net` and `Skyr/Container` pages
+of the SCL reference.
 
 ### A custom domain
 
@@ -699,8 +685,7 @@ import Skyr/DNS
 
 let zone = DNS.Zone({ domain: "example.com" })
 
-zone.ARecord({ name: "@", addresses: [ip.address] })
-zone.AAAARecord({ name: "@", addresses: [pod.address] })
+zone.ARecord({ name: "@", addresses: [Option.unwrap(gw.publicIpv4)] })
 zone.CNAMERecord({ name: "www", target: "example.com" })
 ```
 
@@ -724,13 +709,12 @@ zone.CNAMERecord({ name: "www", target: "example.com" })
   earlier still: a TTL is a `Time.Duration`, a fixed length, and a calendar span
   is a `Time.CalendarDuration` — a type error, which `skyr check` does report.
   Records default to the zone's `defaultTtl`, itself 5 minutes unless set.
-- The AAAA record above tracks the pod's IPv6 because Skyr re-evaluates the
-  config and updates the record when the pod is replaced. Anything *outside*
-  Skyr should reference the stable IPv4 or the domain, never a pod IPv6.
+- Point public records at the gateway's public addresses, never at a Pod's
+  private NIC addresses: those change whenever the Pod rolls over.
 
 ### TLS
 
-Skyr routes TCP to the pod; it does not terminate TLS — certificates live in
+Skyr forwards TCP to the pod; it does not terminate TLS — certificates live in
 your containers. For public HTTPS the practical pattern is a
 [Caddy](https://caddyserver.com) sidecar: it obtains and renews ACME
 certificates automatically and reverse-proxies the app over `localhost`:
@@ -742,11 +726,13 @@ let caddyfile = Container.ephemeralVolume({
 
 let pod = Container.Pod({
     name: "web",
-    internetAddress: ip,
+    scratch: 2147483648,
+    nics: #{ "lan": { network: lan } },
+    gateway: gw,
     containers: #{
         "app": { image: image.url, cpu: 500, memory: 268435456 },
         "caddy": {
-            image: "caddy:2",
+            image: "docker.io/library/caddy:2",
             cpu: 250,
             memory: 134217728,
             mounts: #{ "/etc/caddy": { volume: caddyfile, readOnly: true } },
@@ -754,11 +740,12 @@ let pod = Container.Pod({
     },
 })
 
-pod.Port({ port: 80, public: true })   // ACME HTTP-01 challenge + redirect
-pod.Port({ port: 443, public: true })
+let podIp = Option.unwrap(pod.nics["lan"]?.ipv4)
+gw.Port({ protocol: .tcp, port: 80, target: podIp, targetPort: 80 })   // ACME HTTP-01 + redirect
+gw.Port({ protocol: .tcp, port: 443, target: podIp, targetPort: 443 })
 ```
 
-(The domain must already resolve to the pod for ACME to succeed.) The zone's
+(The domain must already resolve to the gateway for ACME to succeed.) The zone's
 `CAARecord` can restrict which CAs may issue for the domain.
 
 Alternatively, obtain the certificate itself declaratively with
@@ -829,124 +816,40 @@ in-config.
 
 ### Private networking
 
-Pods reach each other privately over a `Network` — a virtual layer-2 network
-with an RFC1918 CIDR (`/16`–`/30`):
+Pods reach each other privately over a `Net.Network`, the same networks
+`Skyr/Machine` instances use:
 
 ```scl
-let net = Container.Network({ name: "app", cidr: "10.42.0.0/24" })
-
 let api = Container.Pod({
     name: "api",
+    scratch: 1073741824,
     containers: #{ "api": { image: image.url, cpu: 500, memory: 268435456 } },
-    networks: #{ "app0": net },
+    nics: #{ "lan": { network: lan } },
 })
 
-// Internal DNS: resolvable as api.app.internal by attached pods.
-net.dns.ARecord({
-    name: "api",
-    addresses: [api.networkAddresses["app0"] ?? ""],
-})
+// Private DNS: resolvable as api.lan.internal by everything on lan.
+lan.dns.A({ name: "api", addresses: [Option.unwrap(api.nics["lan"]?.ipv4)] })
 ```
 
-`networks` is keyed by interface name (not `eth0`/`lo`). Each pod gets an
-inner IPv4 per attachment in `networkAddresses`, keyed the same way; every
-interface you attached is present, reading as pending until its address is
-allocated, so the record above defers instead of publishing an empty one.
-Attached pods can also open non-`public` ports to accept internal-only traffic.
-Internal DNS records require the network to have a `name` and resolve as
-`<record>.<netname>.internal` (`"@"` for the network apex). A pod may not
-attach two networks that share a `name` — the lookup would be ambiguous, so
-it's rejected at eval. Traffic on a Network never leaves the private plane and
-is not metered.
+- Ranges: `ipv4` RFC 1918 /16–/29, `ipv6` ULA /48–/120, either or both. A
+  network's ranges are part of its identity; changing one makes a new network.
+- Separate networks never reach each other, even with overlapping ranges, and
+  there is **no router or peering resource**. A workload that must talk on two
+  networks attaches a NIC to each (their ranges must not overlap).
+- `net.dns.A`/`net.dns.AAAA` names resolve as `<name>.<network name>.internal`,
+  only for workloads with a NIC on that network, through the service-link
+  resolver every Pod has. Publishing needs `resource:AttachDnsRecordToNetwork`
+  on the network, separate from attaching.
+- Traffic on a private network is not charted as Pod internet traffic and
+  carries no Container-specific meter.
 
-An internal DNS name belongs to whoever publishes it **first**: a name another
-environment already holds on the same network is not overwritten — the deploy
-fails, naming the holder — and only the holder can change or remove its own
-record. *Removing* it always works, even after the holder's grant is
-withdrawn; *changing* it goes through the grant. Attaching needs
-`resource:AttachPodToNetwork` on the network; publishing needs the separate
-`resource:AttachDnsRecordToNetwork`.
+## Sharing networks, gateways, and Disks across repos
 
-### Routing between networks
-
-A `Network` on its own is a closed island. `Container.Router` connects several
-of them and routes between them, with an optional stateful ACL. There is no
-peering resource — a router is *a machine on each LAN*:
-
-```scl
-let corp = Container.Network({ name: "corp", cidr: "10.42.0.0/24" })
-let dmz = Container.Network({ name: "dmz", cidr: "10.43.0.0/24" })
-
-Container.Router({
-    name: "edge",
-    networks: #{ "corp": corp, "dmz": dmz },
-    defaultAction: .deny,
-    rules: [
-        { source: corp.cidr, destination: dmz.cidr, action: .allow },
-    ],
-})
-```
-
-- **Real addresses, no NAT.** Pods reach peer-network pods at their own inner
-  IPv4s and keep exactly the interfaces they declared. A deployed router draws
-  an ordinary address on each member network — reported in `addresses`, keyed by
-  the member labels, and answering `ping` and nothing else. A router's
-  `networks` keys are **labels**, not interface names: no interface, no DNS
-  meaning.
-- **Member CIDRs must be disjoint.** Overlapping members are an eval error; a
-  member whose address space is already routed in the closure it joins fails the
-  deploy, naming **the CIDR and your own member label** (never the foreign
-  network). Two deploys racing into an overlap resolve deterministically — the
-  earlier-established membership wins and the loser's space is routed nowhere.
-- **Any member count is valid**, zero and one included (a useful intermediate
-  state while a handle or grant is pending). Members **may live in different
-  regions**; a router takes no `region` input.
-- **ACL:** `rules` match top to bottom, **first match wins**, falling through to
-  `defaultAction` (`.allow` by default; omit both and everything routes).
-  **Stateful** — replies on established connections always pass, so rules govern
-  who may *initiate*. `source`/`destination` are CIDR strings matched on real
-  addresses (`"0.0.0.0/0"` = anything), and transit passing through is filtered
-  by the same rules. The router is the only filter — there's no second, per-pod
-  rule set to keep in step. It governs **access, not exposure**: denied traffic
-  still crosses the private network before it's dropped at the destination's
-  boundary, so an ACL is not a shield against volume.
-- **Chaining is transitive.** Two routers sharing a network route through each
-  other, so joining a router gets you everything it routes, including onward
-  routers — reachability exists only where a chain creates it. Source addresses
-  can't be forged across a router; there's nothing to configure.
-- **Updates are in place.** Changing `networks`, `rules` or `defaultAction`
-  reconverges the router on every node within seconds — surviving members keep
-  their addresses and no pod is recreated; only a new `name` is a new router.
-  The router is rebuilt as it reconverges, so expect a brief window where it
-  forwards nothing. That makes the ACL the router owner's prompt kill switch.
-- **DNS follows routability, not the ACL.** A pod also resolves
-  `<record>.<netname>.internal` on named networks it can *reach* — even through
-  a deny-all router (a name isn't traffic). Routed names are **qualified only**
-  (search domains stay the attached netnames), direct attachment shadows
-  routing, and two routed networks sharing a netname resolve to **NXDOMAIN**.
-  Give the networks of a shared fabric distinct names.
-- Membership needs `resource:AttachRouterToNetwork` on each member network,
-  checked on every transition of the router.
-
-**Cross-org: the DMZ pattern.** Never make your network a member of the other
-org's router. Org A declares a small transit network T and grants org B's
-deployment role `AttachRouterToNetwork` on T — the *only* cross-org grant. Each
-side then connects with a router it **owns** (A: its network + T; B: its network
-+ T), and chaining carries traffic between them. Each side's ACL sits on its own
-router, so each keeps a kill switch that converges in seconds. Revoking the
-grant is lazy and *freezes* rather than evicts (the router's next transition
-fails; established routes stay), and a network owner who doesn't own the
-adjacent router has no lever short of deleting the network — which is exactly
-why each side brings its own router.
-
-## Sharing networks, volumes, and addresses across repos
-
-Networks, persistent volumes, and internet addresses are shareable across
-repositories: the owner exports the handle its constructor returned, the
-consumer imports it via a `Package.scle` dependency (the `scl` skill covers
-imports). The identity strings on those handles are opaque and carry their
-owner — guessing one is not a route in, and a hand-assembled handle is refused
-where a pod attaches, mounts, or binds it.
+Networks, gateways and `Storage.Disk`s are shareable across repositories: the
+owner exports the handle its constructor returned, the consumer imports it via
+a `Package.scle` dependency (the `scl` skill covers imports). The identity
+strings on those handles are full resource QIDs; a hand-assembled handle that is
+not one of the right type is refused where it is used.
 
 Using a shared resource needs the read chain (`repository:View` +
 `environment:View` + `resource:View`) **plus** the use verb, whose object is
@@ -957,35 +860,36 @@ IAM.Policy({
     name: "app-uses-platform",
     subjects: ["acme/app::*:Skyr/IAM.Role:app-deployer"],
     verbs: ["repository:View", "environment:View", "resource:View",
-            "resource:AttachPodToNetwork", "resource:MountVolume"],
+            "resource:AttachPodToNetwork", "resource:AttachPodToDisk"],
     objects: ["acme/platform", "acme/platform::main",
-              "acme/platform::*:Skyr/Container.Network:*",
-              "acme/platform::*:Skyr/Container.PersistentVolume:uploads"],
+              "acme/platform::*:Skyr/Net.Network:*",
+              "acme/platform::*:Skyr/Storage.Disk:uploads-*"],
 })
 ```
 
-The five use verbs are `resource:AttachPodToNetwork`,
-`resource:AttachRouterToNetwork`, `resource:AttachDnsRecordToNetwork`,
-`resource:MountVolume`, and `resource:BindInternetAddress`. (Two more verbs sit
-outside the standard family without being use verbs at all:
-`resource:ForwardPodPort` and `resource:ExecInPod` are checked when an
-*operator* reaches into a running pod, not at any transition — see "Watching a
-rollout".) Enforcement is
-**uniform** — your own environment's resources are checked too; it's invisible
-only because a repo's deployment role defaults to the org's `Super` role, which
-short-circuits within that org. A restricted role needs the grants for its own
-resources as well. A refusal names the verb and the object QID, plus the acting
-role when the deployment presented one.
+A `Network` or `Disk` QID ends in its declared `name` plus a content hash, so
+match it with `<name>-*`. The use verbs are `resource:AttachPodToNetwork`,
+`resource:AttachMachineToNetwork`, `resource:AttachDnsRecordToNetwork`,
+`resource:AttachGatewayToNetwork` (checked against the network),
+`resource:RoutePodThroughGateway`, `resource:RouteMachineThroughGateway`,
+`resource:PublishGatewayPort` (checked against the gateway),
+`resource:AttachPodToDisk` and `resource:AttachMachineToDisk` (checked against
+the Disk). (Two more verbs sit outside the standard family without being use
+verbs at all: `resource:ForwardPodPort` and `resource:ExecInPod` are checked
+when an *operator* reaches into a running pod, not at any transition — see
+"Watching a rollout".) Enforcement is **uniform** — your own environment's
+resources are checked too; it's invisible only because a repo's deployment role
+defaults to the org's `Super` role, which short-circuits within that org. A
+restricted role needs the grants for its own resources as well. A refusal names
+the verb and the object QID, plus the acting role when the deployment presented
+one.
 
 Revocation is **lazy**: it bites on the holder's next transition, never
 detaching a running pod. There is no owner-initiated eviction, so a resource
-you share can be held by its current user until they release it — for a shared
-`InternetAddress` the owner's only forced remedy is delete + recreate, which
-changes the public IP; for a network someone else's router routes, the prompt
-lever belongs to whoever owns that router (its ACL), which is why cross-org
-connections are shaped so each side owns the router in front of its own
-network. Dropping an attachment/membership/mount/binding always succeeds, even
-after the grant is gone.
+you share can be held by its current user until they release it; the owner's
+only forced remedy is deleting the resource (for a network, that takes every
+attachment and record on it). Dropping an attachment, route, port or mount
+always succeeds, even after the grant is gone.
 
 ## Restart, jobs, and scheduled runs
 
@@ -1015,7 +919,7 @@ optional policy fields:
   `initialDelay`/`interval`/`timeout`/`startupWindow` (each a `Time.Duration`,
   so a fixed length, and positive) and `failureThreshold` (a positive count),
   each defaulted by Skyr when omitted. The check runs *from inside the pod*, so the
-  port need not be one `pod.Port` opened — and usually should not be. **One
+  port need not be published through a gateway — and usually should not be. **One
   probe covers startup, readiness and liveness, because its role changes with
   the container's phase**: before its first success it is readiness (a failure
   kills nothing, so a slow start is safe; a container still failing after
@@ -1260,47 +1164,36 @@ the job. Full reference: `curl -s https://skyr.foo/~docs/jobs.md`.
   events. Full reference: the `Skyr/Storage` and `Skyr/Machine` pages of the
   SCL reference.
 
-- **Volumes.** `Container.PersistentVolume({ name, size })` is region-scoped
-  storage that outlives pods (min 8 MiB; a pod can only mount volumes from
-  its own region). `Container.ephemeralVolume({ files, size, name })` is
-  scratch space living and dying with the pod, optionally seeded with
+- **Volumes.** `Container.ephemeralVolume({ files, size, name, medium })` is
+  Pod-local storage living and dying with the pod: `medium: .memory` (the
+  default, guest tmpfs; `size` caps it) or `.scratch` (shares `Pod.scratch`, no
+  `size`, literal seeds only). It is optionally seeded with
   `files: #{ "<path relative to the mount root>": .literal("…") }` — values are
-  the same two arms as `env` (`.literal(…)`/`.secret(ref)`), and a bare string
-  is a type error (see the Caddy example). **Mounting a seeded volume is how
-  files reach a container** — there is no pod-level file input. Mount via a
-  container's `mounts` dict keyed by absolute path:
-  `#{ "/data": { volume: v } }`, with optional
-  `readOnly`/`subPath`/`permissions`/`userId`/`groupId`; two containers mounting
-  the same ephemeral volume must spell the same permissions and owner.
-  Read-only mounts of seeded ephemeral content update in place when the content
-  changes, unless the new content outgrows the disk the pod claimed (each
-  non-empty file rounds up to a whole 4 KiB page, so adding one to a volume
-  that already holds one does) — that replaces the pod, as does every other
-  mount change: the volume's name or size, which mounts share it, and a
-  writable mount's seed. A persistent volume's identity includes
-  its owning environment, so another repository's volume of the same name is a
-  different volume with its own data; mounting one needs `resource:MountVolume`
-  on it (see the sharing section above). A persistent volume is also **durable**:
-  destroying it is held until somebody approves that deletion — see "Durable
-  resources: deletion waits for a person".
-- **Privilege.** A container runs confined by default — a **read-only** root
-  filesystem, the default seccomp profile, and no added Linux capabilities.
-  `privileged: true` on a container drops that confinement for that one
-  container: the full capability set, no seccomp filter, a **writable** root
-  filesystem, and access to the guest's `/dev` — `/dev/kvm` included, so a
-  nested hypervisor (an L3 guest) runs. It is safe to offer because a container
-  is alone in its pod's own VM, so the worst it can reach is that VM, which is
-  already the tenant's; there are no finer knobs (capability lists, sysctls) —
-  the boolean is honest about what it grants. Changing it **recreates** the pod;
-  leaving it out or spelling `false` is exactly the confined default and does
-  not rename or recreate a pod that never asked for privilege. A writable root
-  is scratch space, not storage: root writes land in a guest tmpfs backed by the
-  pod's RAM and **charged to the container's `memory`**, so an overwrite-heavy
-  workload is OOM-killed like any memory-hungry one, and the writable layer has
-  a hard size ceiling the node sets from the machine's memory (an eighth of it,
-  clamped 16–256 MiB) — a write past it fails with `ENOSPC`. That is a different
-  failure mode from the confined default, which answers a root write with
-  `EROFS`. Declare a `Mount` for anything that must persist or grow.
+  the same two arms as `env` (`.literal(…)`/`.secret(ref)`, secrets only in
+  memory volumes), and a bare string is a type error (see the Caddy example).
+  **Mounting a seeded volume is how files reach a container** — there is no
+  pod-level file input. Mount via a container's `mounts` dict keyed by absolute
+  path: `#{ "/data": { volume: v } }`, with optional
+  `readOnly`/`subPath`/`permissions`/`userId`/`groupId`; every mount of one
+  volume must agree on mode and owner. Seed content of a volume that is only
+  ever mounted read-only is re-projected live when it changes; any other volume
+  or mount change replaces the pod. For durable data mount a
+  `Storage.Disk` from the Pod's region instead: `#{ "/data": { disk: data } }`
+  (exactly one of `volume`/`disk`), which needs `resource:AttachPodToDisk` on
+  the Disk. Several containers may mount one Disk; on rollover SCO ejects it
+  from the old Pod before the new one starts, and a guest that does not release
+  it blocks the successor rather than being force-stopped. Removing a Disk's
+  declaration destroys its data (see Raw block disks above).
+- **Privilege.** Every container in a Pod gets its own mount, PID and cgroup
+  namespaces and a writable overlay root whose upper layer lives on the Pod's
+  `scratch` (so root writes count against `scratch`, not `memory`, and fail with
+  `ENOSPC` when it is full). By default it has the Docker-default capability set
+  and minimal private devices. `privileged: true` grants the full capability
+  set, the VM's `/dev` — `/dev/kvm` included, so a nested hypervisor runs — and
+  a writable delegated cgroup subtree for nested runtimes. It is safe to offer
+  because the Pod is its own VM, which is already the tenant's; there are no
+  finer knobs. Changing it **recreates** the pod. Declare a `Storage.Disk` mount
+  for anything that must persist.
 - **Secrets.** Every secret is **owned by a resource** and sealed in the
   secrets vault; SCL only ever holds a `Secret.Ref` (`enum { .version(Str) }`,
   a pinned Secret Version QID, never plaintext). Generators emit one:
@@ -1622,7 +1515,7 @@ skyr resources list               # resources in the current env (DELETION colum
 skyr resources list --env staging
 skyr resources logs Skyr/Container.Pod:web
 skyr resources logs -f stockholm:Skyr/Container.Pod:web
-skyr resources approve-deletion Skyr/Container.PersistentVolume:data
+skyr resources approve-deletion Skyr/HTTP.Resource:subscription
 ```
 
 A rollout is done when the deployment reports converged — state `Up`, or
@@ -1674,7 +1567,7 @@ pasteable identifiers.
 Forwarding is TCP-only, with a remote port from 1 to 65535. It connects to
 `127.0.0.1:<remote-port>` in the pod's shared network namespace, so a listener
 in any container can receive it, including one bound only to loopback. No
-`Pod.Port` declaration, public exposure or data NIC is needed. Permission is
+gateway port, public exposure or data NIC is needed. Permission is
 `resource:ForwardPodPort` on the **pod's QID**, not an individual port resource.
 A stopped or completed pod is refused with an error; forwarding does not
 restart it.
@@ -1808,7 +1701,7 @@ curl -s https://skyr.foo/~docs/deployments.md        # lifecycle, supersession, 
 curl -s https://skyr.foo/~docs/resources.md          # what every resource does: transitions, drift, reads
 curl -s https://skyr.foo/~docs/jobs.md               # restart policy, jobs, cron-style scheduling
 curl -s https://skyr.foo/~docs/machine-images.md     # Machine bootDisk contract, guest image authoring
-curl -s https://skyr.foo/~docs/networking.md         # private networks, routers, ACLs, internal DNS, the DMZ pattern
+curl -s https://skyr.foo/~docs/networking.md         # Pod networks, gateways, ports, private DNS, sharing
 curl -s https://skyr.foo/~docs/status.md             # health, incidents, notifications
 curl -s https://skyr.foo/~docs/secrets.md            # secrets: resource-owned, Knob.Secret, consumption, sharing, IAM
 curl -s https://skyr.foo/~docs/knobs.md              # knobs: the five types, awaiting-input gating, skyr knobs CLI
