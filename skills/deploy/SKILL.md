@@ -655,6 +655,12 @@ builder egress the same `resource:AttachPodToNetwork` /
 `resource:RoutePodThroughGateway` grants a pod needs. Pulls are anonymous;
 private third-party registries are not supported.
 
+Build contexts are limited to 512 MiB of extracted content and 100,000 visited
+entries, with at most 64 MiB per file or symlink target. Use `ignorefile` to
+narrow the context and split oversized files. Git tree and commit objects are
+also bounded to 8 MiB and 1 MiB. Excess concurrent builds receive a retryable
+capacity refusal before extraction; the deployment retries automatically.
+
 Required `Pod.scratch` is bytes for unpacked layers, writable container uppers
 and scratch-backed volumes. Skyr does no sizing or auto-growth. Image-preparation
 `ENOSPC` is a terminal startup failure, not a silent retry loop; the Pod agent log
