@@ -966,10 +966,12 @@ optional policy fields:
   finishes.
 - **`maxRetries`** — `Int?`, valid only with `.onFailure`; absent means retry
   forever, `N` permits `N + 1` executions before the last failing exit is final.
-- **`timeout`** — `Time.Duration?`, a per-attempt kill budget. A
-  `Time.Duration` is a fixed length (a multiple of `Time.second`/`Time.day`/…);
-  a calendar-month span is a `Time.CalendarDuration` and does not type-check
-  here.
+- **`timeout`** — `Time.Duration?`, an optional per-attempt kill budget.
+  When set, it must be positive; absent means no timeout. There is no policy
+  ceiling: the technical maximum is 9,223,372,036,854,775,807 milliseconds
+  (a signed 64-bit integer). A `Time.Duration` is a fixed length (a multiple of
+  `Time.second`, `Time.day`, `Time.week`, and so on); a calendar-month span is a
+  `Time.CalendarDuration` and does not type-check here.
 - There is **no `probe`**: health probes are not supported. A container is
   judged by its process — running, restarting, or finished.
 
